@@ -550,12 +550,14 @@ clássicas para serverless é só configurar NCC + Private Link, sem mudar códi
 
 ## E o Azure Data Factory?
 
-O ADF pode continuar orquestrando durante a migração, inclusive cargas batch do Db2 pelo
-self-hosted integration runtime. Dois pontos merecem atenção:
+O ADF pode continuar orquestrando durante a migração. Vale separar o que ele resolve do que
+precisa de complemento:
 
-- **CDC por log:** o conector Db2 do ADF lê por consulta, então a carga incremental tem as
-  mesmas limitações mostradas no Cenário 3 (não enxerga deletes nem estados intermediários e
-  depende da coluna de data).
+- **Leitura do Db2:** quando o ADF lê o Db2 diretamente, o conector nativo faz isso por consulta,
+  então a carga incremental tem as mesmas limitações mostradas no Cenário 3 (não enxerga deletes
+  nem estados intermediários e depende da coluna de data). Quando as mudanças já chegam em
+  arquivos, por exemplo gravadas a partir do Kafka num storage, o ADF ou o Auto Loader leem esses
+  arquivos, e a lógica de CDC da Silver continua a mesma.
 - **Volta de dados para o Db2:** o conector Db2 nativo do ADF é só de leitura. Gravar é possível
   pelo conector ODBC genérico, com o driver do Db2 instalado no integration runtime, mas a
   validação de contagem e soma, a aplicação em faixas sem travar a produção e a auditoria
