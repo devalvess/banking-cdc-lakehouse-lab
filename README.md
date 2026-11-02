@@ -17,10 +17,26 @@ ExpressRoute). Os dados são **100% sintéticos**, gerados por um simulador de m
 > ⚠️ Nenhum dado de cliente real é usado neste repositório. Todos os CPFs, nomes e valores são
 > gerados artificialmente.
 
+## Em 1 minuto
+
+- **CDC por log, não por consulta:** o Debezium lê o log do Db2 e publica no Kafka; o pipeline
+  Lakeflow aplica as mudanças com `AUTO CDC` (SCD2 em clientes). Com o conector parado, o Kafka
+  segura a fila e o log se acumula **no Db2** — por isso o README trata retenção e monitoramento
+  na origem.
+- **Reverse ETL sem tocar direto na produção:** o Databricks grava numa staging; uma procedure no
+  Db2 valida contagem e soma e aplica em faixas, com lock timeout de 5 s. No teste de falha,
+  **554 linhas esperadas, 548 recebidas: lote rejeitado e produção intocada**, com tudo
+  registrado na auditoria dos dois lados.
+- **Legado sem CDC:** JDBC incremental por marca d'água, detecção de deletes e reconciliação por
+  contagens e somas. Divergência que persiste **bloqueia a Gold**.
+- **Governança e custo:** PII mascarada por grupo no Unity Catalog, Gold com descrições de
+  colunas para linguagem natural e custo real do Azure no dashboard.
+
 ---
 
 ## Sumário
 
+- [Em 1 minuto](#em-1-minuto)
 - [Arquitetura](#arquitetura)
 - [O que é real e o que é simulado](#o-que-é-real-e-o-que-é-simulado)
 - [Modelo de dados](#modelo-de-dados)
