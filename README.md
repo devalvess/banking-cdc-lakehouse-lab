@@ -551,10 +551,16 @@ clássicas para serverless é só configurar NCC + Private Link, sem mudar códi
 ## E o Azure Data Factory?
 
 O ADF pode continuar orquestrando durante a migração, inclusive cargas batch do Db2 pelo
-self-hosted integration runtime. Dois pontos deste laboratório, porém, ele não cobre sozinho:
-o **CDC por log**, porque com o conector Db2 do ADF a carga incremental é por consulta, com as
-limitações mostradas no Cenário 3; e a **volta de dados para o Db2**, porque o conector Db2 do
-ADF funciona apenas como origem na atividade de cópia.
+self-hosted integration runtime. Dois pontos merecem atenção:
+
+- **CDC por log:** o conector Db2 do ADF lê por consulta, então a carga incremental tem as
+  mesmas limitações mostradas no Cenário 3 (não enxerga deletes nem estados intermediários e
+  depende da coluna de data).
+- **Volta de dados para o Db2:** o conector Db2 nativo do ADF é só de leitura. Gravar é possível
+  pelo conector ODBC genérico, com o driver do Db2 instalado no integration runtime, mas a
+  validação de contagem e soma, a aplicação em faixas sem travar a produção e a auditoria
+  continuam precisando ser construídas. O padrão de staging com procedure deste laboratório
+  funciona com qualquer orquestrador, inclusive o próprio ADF.
 
 ---
 
