@@ -1,0 +1,29 @@
+resources:
+  jobs:
+    setup_lab:
+      name: setup_lab
+      description: Cria catálogo, schemas, funções de governança e tabelas Gold. Rodar uma vez.
+      tags:
+        projeto: banking-cdc-lakehouse-lab
+        carga: setup_lab
+      parameters:
+        - name: catalogo
+          default: ${var.catalogo}
+      # Sem cluster definido: as tarefas rodam em serverless (não precisam da rede on-prem).
+      tasks:
+        - task_key: setup_catalogo
+          notebook_task:
+            notebook_path: ../src/00_setup/setup_catalogo.sql
+        - task_key: governanca
+          depends_on: [{ task_key: setup_catalogo }]
+          notebook_task:
+            notebook_path: ../src/05_governanca/governanca.sql
+        - task_key: gold_ddl
+          depends_on: [{ task_key: governanca }]
+          notebook_task:
+            notebook_path: ../src/04_gold/gold_ddl.sql
+        # Exige os grupos de conta (ver grants.sql). Fica por último para não bloquear o resto.
+        - task_key: grants
+          depends_on: [{ task_key: gold_ddl }]
+          notebook_task:
+            notebook_path: ../src/05_governanca/grants.sql

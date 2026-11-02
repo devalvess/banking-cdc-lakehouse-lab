@@ -1,0 +1,112 @@
+# Servidor "on-premises" do banco simulado.
+# Portas expostas na rede privada (NSG libera só a VNet do Databricks):
+#   50000 Db2 | 9092 Kafka | 2222 SFTP. A Kafka UI fica só em localhost (acesso via túnel SSH).
+
+name: onprem
+
+services:
+  db2:
+    build: ./db2
+    container_name: db2
+    privileged: true
+    restart: unless-stopped
+    environment:
+      LICENSE: accept
+      DB2INSTANCE: db2inst1
+      DB2INST1_PASSWORD: ${DB2INST1_PASSWORD}
+      SVCDBX_PASSWORD: ${SVCDBX_PASSWORD}
+      DBNAME: BANCO
+      ARCHIVE_LOGS: "false"     # o log arquivado é configurado pelo db2_setup.sh
+      AUTOCONFIG: "true"
+    ports:
+      - "50000:50000"
+    volumes:
+      - db2data:/database
+
+  kafka:
+    image: apache/kafka:3.9.1
+    container_name: kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      # EXTERNAL é o endereço que o Databricks usa: IP privado do servidor, alcançado via peering.
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://${VM_PRIVATE_IP}:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_RETENTION_HOURS: 168       # 7 dias: janela para o consumidor se recuperar
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+
+  kafka-connect:
+    build: ./connect
+    container_name: kafka-connect
+    restart: unless-stopped
+    depends_on: [kafka, db2]
+    environment:
+      BOOTSTRAP_SERVERS: kafka:29092
+      GROUP_ID: connect-onprem
+      CONFIG_STORAGE_TOPIC: _connect-configs
+      OFFSET_STORAGE_TOPIC: _connect-offsets
+      STATUS_STORAGE_TOPIC: _connect-status
+      # Senhas lidas de arquivo (FileConfigProvider), nunca gravadas na config do conector.
+      CONNECT_CONFIG_PROVIDERS: file
+      CONNECT_CONFIG_PROVIDERS_FILE_CLASS: org.apache.kafka.common.config.provider.FileConfigProvider
+    ports:
+      - "127.0.0.1:8083:8083"
+    volumes:
+      - ./secrets:/kafka/secrets:ro
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: kafka-ui
+    restart: unless-stopped
+    depends_on: [kafka, kafka-connect]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: onprem
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: debezium
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://kafka-connect:8083
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  # Servidor de arquivos: os CSVs do batch noturno ficam aqui e o Databricks busca via SFTP
+  # (modelo pull — o on-prem não precisa de credencial da nuvem).
+  sftp:
+    image: atmoz/sftp:alpine
+    container_name: sftp
+    restart: unless-stopped
+    command: "transfer:${SFTP_PASSWORD}:1001"
+    ports:
+      - "2222:22"
+    volumes:
+      - /dados/batch:/home/transfer/batch:ro
+
+  simulador:
+    build: ./simulador
+    container_name: simulador
+    restart: unless-stopped
+    depends_on: [db2]
+    environment:
+      DB2_HOST: db2
+      DB2_PORT: 50000
+      DB2_DATABASE: BANCO
+      DB2_USER: db2inst1
+      DB2_PASSWORD: ${DB2INST1_PASSWORD}
+      INTERVALO_SEG: ${SIMULADOR_INTERVALO_SEG:-2}
+      DIR_BATCH: /dados/batch
+    volumes:
+      - /dados/batch:/dados/batch
+    command: ["python", "gerador.py", "run"]
+
+volumes:
+  db2data:
+  kafkadata:

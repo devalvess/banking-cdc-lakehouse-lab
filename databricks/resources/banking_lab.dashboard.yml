@@ -1,0 +1,12 @@
+# Dashboard AI/BI: visão de negócio (crédito) e de operação (CDC, reconciliação, reverse ETL).
+# Sem credenciais embutidas: cada leitor vê os dados com as próprias permissões,
+# então máscaras e filtros de linha do Unity Catalog valem também aqui.
+resources:
+  dashboards:
+    banking_lab:
+      display_name: "Banking Lab - Crédito e Operação"
+      file_path: ../src/07_dashboard/banking_lab.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      embed_credentials: false
+      dataset_catalog: ${var.catalogo}
+      dataset_schema: gold

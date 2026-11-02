@@ -1,0 +1,83 @@
+resources:
+  jobs:
+    carga_diaria:
+      name: carga_diaria_banco
+      description: >
+        CDC do core (Kafka) + legado sem CDC (JDBC) + arquivos (SFTP) -> reconciliação ->
+        Gold -> reverse ETL para o sistema de crédito on-prem. A Gold só é publicada se a
+        reconciliação do legado bater.
+      max_concurrent_runs: 1
+      # Tags do job vão para o consumo no system.billing (inclusive da tarefa serverless): FinOps.
+      tags:
+        projeto: banking-cdc-lakehouse-lab
+        carga: carga_diaria_banco
+      parameters:
+        - name: catalogo
+          default: ${var.catalogo}
+        - name: onprem_host
+          default: ${var.onprem_host}
+        # Cenários de demonstração (chegam aos widgets de mesmo nome nos notebooks):
+        #   modo=completo                  relê o legado inteiro (corrige divergência persistente)
+        #   simular_falha_transmissao=sim  descarta 1% do lote: a procedure rejeita e a produção não muda
+        - name: modo
+          default: incremental
+        - name: simular_falha_transmissao
+          default: nao
+
+      # Compute híbrido: tarefas que falam com o on-prem usam cluster clássico (VNet com peering);
+      # a Gold, que só lê o Lakehouse, roda em serverless.
+      job_clusters:
+        - job_cluster_key: rede_onprem
+          new_cluster:
+            spark_version: ${var.spark_version}
+            node_type_id: ${var.node_type}
+            num_workers: 0
+            data_security_mode: SINGLE_USER
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: local[*]
+            custom_tags:
+              ResourceClass: SingleNode
+              projeto: banking-cdc-lakehouse-lab
+
+      tasks:
+        - task_key: cdc_core
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.cdc_core.id}
+
+        - task_key: arquivos_sftp
+          job_cluster_key: rede_onprem
+          notebook_task:
+            notebook_path: ../src/03_legado/ingestao_arquivos_sftp.py
+          libraries:
+            - pypi: { package: paramiko==3.5.1 }
+
+        - task_key: legado_contratos
+          job_cluster_key: rede_onprem
+          notebook_task:
+            notebook_path: ../src/03_legado/carga_legado_contratos.py
+          libraries:
+            - maven: { coordinates: "com.ibm.db2:jcc:11.5.9.0" }
+
+        - task_key: reconciliacao_ok
+          depends_on: [{ task_key: legado_contratos }]
+          condition_task:
+            op: EQUAL_TO
+            left: "{{tasks.legado_contratos.values.reconciliacao_ok}}"
+            right: "true"
+
+        - task_key: gold
+          depends_on:
+            - { task_key: cdc_core }
+            - { task_key: arquivos_sftp }
+            - { task_key: reconciliacao_ok, outcome: "true" }
+          notebook_task:
+            notebook_path: ../src/04_gold/gold_carga.sql
+
+        - task_key: reverse_etl
+          depends_on: [{ task_key: gold }]
+          job_cluster_key: rede_onprem
+          notebook_task:
+            notebook_path: ../src/06_reverse_etl/reverse_etl_limite.py
+          libraries:
+            - maven: { coordinates: "com.ibm.db2:jcc:11.5.9.0" }

@@ -1,0 +1,29 @@
+# Bundle do lado Databricks do laboratório.
+#   databricks bundle deploy -t dev --profile <profile>
+bundle:
+  name: banking_cdc_lakehouse_lab
+
+include:
+  - resources/*.yml
+
+variables:
+  catalogo:
+    description: Catálogo do Unity Catalog do laboratório
+    default: banking_lab
+  onprem_host:
+    description: IP privado do servidor on-prem (alcançado via VNet peering)
+    default: 10.50.1.10
+  node_type:
+    description: VM dos clusters clássicos (os únicos que alcançam a rede on-prem)
+    default: Standard_D4ds_v5
+  spark_version:
+    default: 16.4.x-scala2.12
+  warehouse_id:
+    description: SQL Warehouse do dashboard
+    lookup:
+      warehouse: Serverless Starter Warehouse
+
+targets:
+  dev:
+    mode: development
+    default: true

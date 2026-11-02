@@ -1,0 +1,450 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rede do Banking Lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: figura larga (sua máquina → assinatura Azure com 2 VNets → control plane) em cenas; player com comando de teste; cenas agrupadas abaixo */
+:root {
+  --bg: #f4f6f9; --fg: #18212e; --muted: #5a6677; --line: #c3ccd8; --panel: #ffffff; --soft: #eef2f7;
+  --z-az: #edf2f9; --z-v1: #e7ebf0; --z-v2: #e2ecfa; --z-cp: #f3eefb; --z-pc: #eef4ee;
+  --accent: #1f5fbf; --data: #1d8a4e; --ssh: #7a3fb8; --ctrl: #2a6fb5; --block: #c42727; --warn: #b5590a;
+  --font: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f141b; --fg: #e5e9ef; --muted: #98a3b3; --line: #3a4452; --panel: #19212c; --soft: #1f2833;
+  --z-az: #141b25; --z-v1: #1a2029; --z-v2: #142238; --z-cp: #221a33; --z-pc: #16231a;
+  --accent: #6ea8ff; --data: #4ec98a; --ssh: #b98cf2; --ctrl: #6aaef2; --block: #ff6e6e; --warn: #f2a04c; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f141b; --fg: #e5e9ef; --muted: #98a3b3; --line: #3a4452; --panel: #19212c; --soft: #1f2833;
+  --z-az: #141b25; --z-v1: #1a2029; --z-v2: #142238; --z-cp: #221a33; --z-pc: #16231a;
+  --accent: #6ea8ff; --data: #4ec98a; --ssh: #b98cf2; --ctrl: #6aaef2; --block: #ff6e6e; --warn: #f2a04c; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--font); line-height: 1.5;
+  padding-block: 28px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+main { max-width: 1240px; margin: 0 auto; display: grid; gap: 20px; }
+header h1 { font-size: 1.6rem; font-weight: 700; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 76ch; }
+.scroll { overflow-x: auto; border-radius: 16px; }
+svg.rede { display: block; width: 100%; min-width: 980px; height: auto; color: var(--fg); font-family: var(--font); }
+
+.z-az { fill: var(--z-az); stroke: var(--line); } .z-v1 { fill: var(--z-v1); stroke: var(--line); }
+.z-v2 { fill: var(--z-v2); stroke: var(--line); } .z-cp { fill: var(--z-cp); stroke: var(--line); }
+.z-pc { fill: var(--z-pc); stroke: var(--line); }
+.sub { fill: none; stroke: var(--muted); stroke-dasharray: 5 4; }
+.box { fill: var(--panel); stroke: var(--line); }
+.porta { fill: var(--soft); stroke: var(--line); }
+.pill { fill: var(--panel); stroke: var(--warn); stroke-width: 1.4; }
+.zt { fill: var(--fg); font-size: 12.5px; font-weight: 700; letter-spacing: 0.07em; }
+.zs { fill: var(--muted); font-size: 10.5px; font-family: var(--mono); }
+.t { fill: var(--fg); font-size: 12px; font-weight: 600; }
+.s { fill: var(--muted); font-size: 10.5px; }
+.m { fill: var(--fg); font-size: 10.5px; font-family: var(--mono); }
+.lbl { font-size: 10.5px; font-weight: 600; }
+.fl { fill: none; stroke-width: 2.2; }
+.f-data { stroke: var(--data); stroke-width: 3; } .c-data { fill: var(--data); }
+.f-ssh { stroke: var(--ssh); } .c-ssh { fill: var(--ssh); }
+.f-tun { stroke: var(--ssh); stroke-dasharray: 6 4; }
+.f-ctrl { stroke: var(--ctrl); } .c-ctrl { fill: var(--ctrl); }
+.f-block { stroke: var(--block); stroke-dasharray: 6 4; } .c-block { fill: var(--block); }
+.f-peer { stroke: var(--accent); stroke-width: 4; } .c-peer { fill: var(--accent); }
+.f-mut { stroke: var(--muted); stroke-width: 1.6; } .c-mut { fill: var(--muted); }
+.c-warn { fill: var(--warn); }
+.badge circle { fill: var(--fg); stroke: var(--bg); stroke-width: 2.5; }
+.badge text { fill: var(--bg); font-size: 11.5px; font-weight: 700; font-family: var(--mono); }
+
+svg.rede [data-s] { transition: opacity .25s ease; }
+svg.rede.focus [data-s] { opacity: .12; }
+svg.rede.focus [data-s].on { opacity: 1; }
+svg.rede.focus .badge.on circle { fill: var(--accent); }
+svg.rede.focus .badge.on text { fill: #fff; }
+@media (prefers-reduced-motion: reduce) { svg.rede [data-s] { transition: none; } }
+
+.player { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 12px; }
+.player .linha { display: grid; grid-template-columns: auto 1fr auto; gap: 18px; align-items: center; }
+.player .n { font-family: var(--mono); font-weight: 600; font-size: 2rem; line-height: 1; color: var(--accent); min-width: 2ch; text-align: center; }
+.player .txt { min-width: 0; }
+.player .fase { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.player h2 { margin: 2px 0 4px; font-size: 1.12rem; }
+.player p { margin: 0; color: var(--muted); max-width: 86ch; }
+.ctrl { display: flex; gap: 8px; flex-wrap: wrap; }
+.teste { display: grid; gap: 4px; }
+.teste .rotulo { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.code { position: relative; background: var(--soft); border: 1px solid var(--line); border-radius: 10px; }
+.code pre { margin: 0; padding: 10px 12px; padding-right: 78px; overflow-x: auto; font-family: var(--mono); font-size: 0.8rem; white-space: pre; }
+.copiar { position: absolute; top: 7px; right: 7px; font: inherit; font-size: 0.74rem; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+button { font: inherit; font-size: 0.9rem; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); padding: 7px 14px; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .45; cursor: default; }
+@media (max-width: 700px) { .player .linha { grid-template-columns: auto 1fr; } .ctrl { grid-column: 1 / -1; } }
+
+.cenas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.grupo { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 14px 12px; min-width: 0; }
+.grupo h3 { margin: 0 0 8px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.grupo ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.grupo li button { width: 100%; text-align: left; background: transparent; border-color: transparent; padding: 6px 8px;
+  display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: start; font-size: 0.88rem; }
+.grupo .k { font-family: var(--mono); font-weight: 600; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--fg); color: var(--bg); font-size: 0.75rem; }
+.grupo li button[aria-current="step"] { background: var(--soft); border-color: var(--accent); }
+.grupo li button[aria-current="step"] .k { background: var(--accent); color: #fff; }
+.legenda { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.82rem; color: var(--muted); }
+.legenda span { display: inline-flex; align-items: center; gap: 6px; }
+.legenda i { display: inline-block; width: 26px; height: 0; border-top: 3px solid; }
+.icones { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.icones h3 { margin: 0 0 10px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.icones ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 8px 18px; }
+.icones li { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: center; font-size: 0.86rem; min-width: 0; }
+.icones svg { width: 24px; height: 24px; }
+.icones p { margin: 10px 0 0; font-size: 0.78rem; color: var(--muted); }
+</style>
+
+<main>
+  <header>
+    <h1>A rede do Banking Lab, peça por peça</h1>
+    <p>Como o Databricks alcança o "datacenter" sem passar pela internet, quem pode falar com quem e por quê o serverless fica de fora. Use <strong>Próximo</strong> ou as setas ← → do teclado.</p>
+  </header>
+
+  <figure style="margin:0">
+    <div class="scroll">
+    <svg class="rede" id="rede" viewBox="0 0 1200 660" role="img" aria-label="Rede do laboratório: a sua máquina acessa o control plane do Databricks por HTTPS e a VM on-prem só por SSH na porta 22. Na assinatura Azure, a vnet-onprem (10.50.0.0/16) e a workers-vnet do Databricks (10.139.0.0/16) estão ligadas por VNet peering. O NSG da VM libera as portas 50000, 9092 e 2222 só para 10.139.0.0/16. O cluster clássico sai para o control plane pelo NAT gateway. O serverless roda na rede da Databricks e não tem rota até o on-prem.">
+      <defs>
+        <marker id="a-data" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="c-data"/></marker>
+        <marker id="a-ssh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="c-ssh"/></marker>
+        <marker id="a-ctrl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="c-ctrl"/></marker>
+        <marker id="a-peer" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="c-peer"/></marker>
+        <marker id="a-mut" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="c-mut"/></marker>
+        <!-- Ícones no estilo dos ícones do Azure (desenhados à mão, cores dos originais) -->
+        <symbol id="i-sub" viewBox="0 0 24 24"><circle cx="7.5" cy="12" r="5.5" fill="#FCD116"/><circle cx="7.5" cy="12" r="2" fill="#A67C00"/><path d="M12 10.8h10v2.4h-2v3h-2.4v-3h-1.6v2h-2.4v-2H12z" fill="#FCD116"/></symbol>
+        <symbol id="i-rg" viewBox="0 0 24 24"><path d="M6 3H3v18h3M18 3h3v18h-3" fill="none" stroke="#0078D4" stroke-width="2"/><path d="M12 6l5 3v6l-5 3-5-3V9z" fill="#50E6FF" stroke="#0078D4"/></symbol>
+        <symbol id="i-vnet" viewBox="0 0 24 24"><path d="M7 5L1.5 12 7 19M17 5l5.5 7-5.5 7" fill="none" stroke="#0078D4" stroke-width="2.4" stroke-linejoin="round"/><circle cx="7.5" cy="12" r="1.8" fill="#7FBA00"/><circle cx="12" cy="12" r="1.8" fill="#7FBA00"/><circle cx="16.5" cy="12" r="1.8" fill="#7FBA00"/></symbol>
+        <symbol id="i-subnet" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2" fill="none" stroke="#0078D4" stroke-width="1.8" stroke-dasharray="3 2"/><circle cx="7.5" cy="12" r="1.8" fill="#7FBA00"/><circle cx="12" cy="12" r="1.8" fill="#7FBA00"/><circle cx="16.5" cy="12" r="1.8" fill="#7FBA00"/></symbol>
+        <symbol id="i-nsg" viewBox="0 0 24 24"><path d="M12 2l8.5 3.2V11c0 5.3-3.6 9.6-8.5 11-4.9-1.4-8.5-5.7-8.5-11V5.2z" fill="#0078D4"/><path d="M12 4.6l6 2.3v4.3c0 3.9-2.5 7.2-6 8.4z" fill="#50E6FF"/></symbol>
+        <symbol id="i-vm" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="13.5" rx="1.5" fill="#0078D4"/><rect x="4" y="5" width="16" height="9.5" fill="#50E6FF"/><path d="M9 16.5h6l1 3.5H8z" fill="#8A8A8A"/><rect x="6" y="19.6" width="12" height="1.8" rx=".9" fill="#8A8A8A"/></symbol>
+        <symbol id="i-pip" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#0078D4"/><text x="12" y="15.6" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle" font-family="Segoe UI, sans-serif">IP</text></symbol>
+        <symbol id="i-nat" viewBox="0 0 24 24"><rect x="1.5" y="1.5" width="21" height="21" rx="4.5" fill="#0078D4"/><path d="M5 7l7 5M5 12h7M5 17l7-5M12 12h6M15.5 9l3 3-3 3" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-peer" viewBox="0 0 24 24"><path d="M5 6.5l4.2 5.5L5 17.5.8 12zM19 6.5l4.2 5.5-4.2 5.5-4.2-5.5z" fill="#0078D4"/><path d="M8.6 12h6.8" stroke="#7FBA00" stroke-width="2.6"/></symbol>
+        <symbol id="i-storage" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2" fill="#A0A0A0"/><rect x="2" y="4" width="20" height="4.5" rx="1.5" fill="#0078D4"/><rect x="4" y="10.5" width="16" height="2.6" fill="#37C2B1"/><rect x="4" y="15" width="16" height="2.6" fill="#37C2B1"/></symbol>
+        <symbol id="i-dbx" viewBox="0 0 24 24"><path d="M12 3l9.5 5.2L12 13.4 2.5 8.2z" fill="#FF3621"/><path d="M2.5 12.2l9.5 5.2 9.5-5.2M2.5 16.2l9.5 5.2 9.5-5.2" fill="none" stroke="#FF3621" stroke-width="2.3" stroke-linejoin="round"/></symbol>
+        <symbol id="i-docker" viewBox="0 0 24 24"><g fill="#2496ED"><rect x="3" y="9.5" width="4" height="4"/><rect x="8" y="9.5" width="4" height="4"/><rect x="13" y="9.5" width="4" height="4"/><rect x="8" y="4.5" width="4" height="4"/><path d="M1.5 14.8h20c-.6 3.4-3.4 5.4-8.6 5.4-6 0-10-1.9-11.4-5.4z"/></g></symbol>
+        <symbol id="i-pc" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="11.5" rx="1.5" fill="#5A6677"/><rect x="5.6" y="5.6" width="12.8" height="8.3" fill="#9FD3F5"/><path d="M1.5 17h21l-1.6 3.2H3.1z" fill="#5A6677"/></symbol>
+      </defs>
+
+      <!-- Control plane -->
+      <g data-s="7 8">
+        <rect x="640" y="16" width="544" height="128" rx="14" class="z-cp"/>
+        <use href="#i-dbx" x="658" y="26" width="26" height="26"/>
+        <text x="692" y="40" class="zt">DATABRICKS CONTROL PLANE</text>
+        <text x="692" y="57" class="zs">rede da Databricks · fora da sua assinatura</text>
+      </g>
+      <g data-s="6 7">
+        <rect x="660" y="72" width="150" height="56" rx="10" class="box"/>
+        <text x="672" y="95" class="t">Web UI e API</text>
+        <text x="672" y="112" class="s">navegador e CLI</text>
+      </g>
+      <g data-s="8">
+        <rect x="822" y="72" width="160" height="56" rx="10" class="box" style="stroke:var(--block);stroke-width:1.4"/>
+        <text x="834" y="95" class="t">Compute serverless</text>
+        <text x="834" y="112" class="s">roda a Gold, sem a sua VNet</text>
+      </g>
+      <g data-s="7">
+        <rect x="994" y="72" width="176" height="56" rx="10" class="box"/>
+        <text x="1006" y="95" class="t">Agendador de jobs</text>
+        <text x="1006" y="112" class="s">manda o cluster trabalhar</text>
+      </g>
+
+      <!-- Sua máquina -->
+      <g data-s="6">
+        <rect x="16" y="170" width="210" height="300" rx="14" class="z-pc"/>
+        <use href="#i-pc" x="28" y="180" width="26" height="26"/>
+        <text x="60" y="194" class="zt">SUA MÁQUINA</text>
+        <text x="60" y="211" class="zs">IP dinâmico de casa</text>
+        <rect x="30" y="228" width="182" height="40" rx="8" class="box"/>
+        <text x="42" y="245" class="t">Navegador</text><text x="42" y="260" class="s">Databricks e Kafka UI</text>
+        <rect x="30" y="278" width="182" height="40" rx="8" class="box"/>
+        <text x="42" y="295" class="t">DBeaver</text><text x="42" y="310" class="m">localhost:50000</text>
+        <rect x="30" y="328" width="182" height="40" rx="8" class="box"/>
+        <text x="42" y="345" class="t">Terminal / VS Code</text><text x="42" y="360" class="m">ssh azureuser@…</text>
+        <rect x="30" y="378" width="182" height="40" rx="8" class="box" style="stroke:var(--ssh)"/>
+        <text x="42" y="395" class="t">Túnel SSH</text><text x="42" y="410" class="m">:50000 e :8080 → VM</text>
+        <text x="32" y="448" class="s">Nada do ambiente roda aqui.</text>
+      </g>
+      <g data-s="6 7">
+        <path d="M120 170V100H656" class="fl f-ctrl" marker-end="url(#a-ctrl)"/>
+        <text x="390" y="92" class="lbl" style="fill:var(--ctrl)" text-anchor="middle">HTTPS · internet</text>
+      </g>
+
+      <!-- Assinatura Azure -->
+      <g data-s="1 9">
+        <rect x="244" y="160" width="940" height="490" rx="16" class="z-az"/>
+        <use href="#i-sub" x="262" y="167" width="22" height="22"/>
+        <text x="290" y="184" class="zt">SUA ASSINATURA AZURE</text>
+        <text x="478" y="184" class="zs">Subscription</text>
+      </g>
+
+      <!-- vnet-onprem -->
+      <g data-s="1 3 4 5 6 9">
+        <rect x="264" y="200" width="350" height="430" rx="12" class="z-v1"/>
+        <use href="#i-vnet" x="280" y="208" width="24" height="24"/>
+        <text x="310" y="224" class="t">vnet-onprem · <tspan class="m">10.50.0.0/16</tspan></text>
+        <use href="#i-rg" x="310" y="230" width="13" height="13"/>
+        <text x="327" y="240" class="s">rg-onprem-simulado · o "datacenter"</text>
+        <rect x="280" y="256" width="318" height="360" rx="10" class="sub"/>
+        <use href="#i-subnet" x="290" y="264" width="17" height="17"/>
+        <text x="311" y="276" class="s">snet-servidores · <tspan class="m">10.50.1.0/24</tspan></text>
+        <rect x="300" y="296" width="282" height="300" rx="10" class="box"/>
+        <use href="#i-vm" x="312" y="302" width="26" height="26"/>
+        <text x="344" y="316" class="t">vm-onprem-db2</text>
+        <text x="344" y="331" class="m">IP privado 10.50.1.10</text>
+        <use href="#i-docker" x="313" y="379" width="17" height="17"/>
+        <text x="334" y="392" class="s">Portas publicadas pelo Docker:</text>
+      </g>
+      <g data-s="3 6">
+        <rect x="316" y="344" width="250" height="24" rx="6" class="porta" style="stroke:var(--ssh)"/>
+        <use href="#i-pip" x="320" y="348" width="16" height="16"/>
+        <text x="341" y="360" class="m">IP público · só :22</text>
+      </g>
+      <g data-s="3">
+        <rect x="430" y="262" width="160" height="22" rx="11" class="pill"/>
+        <use href="#i-nsg" x="446" y="264" width="18" height="18"/>
+        <text x="468" y="277" class="lbl c-warn">nsg-servidores</text>
+      </g>
+      <g data-s="3 4">
+        <rect x="316" y="400" width="250" height="26" rx="6" class="porta"/>
+        <text x="326" y="417" class="m">:50000</text><text x="430" y="417" class="s">Db2 (JDBC)</text>
+      </g>
+      <g data-s="3 4 5">
+        <rect x="316" y="432" width="250" height="26" rx="6" class="porta"/>
+        <text x="326" y="449" class="m">:9092</text><text x="430" y="449" class="s">Kafka</text>
+      </g>
+      <g data-s="3 4">
+        <rect x="316" y="464" width="250" height="26" rx="6" class="porta"/>
+        <text x="326" y="481" class="m">:2222</text><text x="430" y="481" class="s">SFTP</text>
+      </g>
+      <g data-s="6">
+        <rect x="316" y="496" width="250" height="26" rx="6" class="porta" style="stroke-dasharray:4 3"/>
+        <text x="326" y="513" class="m">127.0.0.1:8080</text><text x="470" y="513" class="s">Kafka UI</text>
+        <rect x="316" y="528" width="250" height="26" rx="6" class="porta" style="stroke-dasharray:4 3"/>
+        <text x="326" y="545" class="m">127.0.0.1:8083</text><text x="470" y="545" class="s">Kafka Connect</text>
+        <text x="316" y="578" class="s">127.0.0.1 = só de dentro da VM</text>
+      </g>
+
+      <!-- Peering -->
+      <g data-s="2 4 9">
+        <path d="M618 236H766" class="fl f-peer" marker-start="url(#a-peer)" marker-end="url(#a-peer)"/>
+        <use href="#i-peer" x="680" y="194" width="24" height="24"/>
+        <text x="692" y="226" class="lbl" style="fill:var(--accent)" text-anchor="middle">VNet peering</text>
+        <text x="692" y="253" class="s" text-anchor="middle">Connected nos 2 sentidos</text>
+      </g>
+
+      <!-- workers-vnet -->
+      <g data-s="1 4 7 9">
+        <rect x="770" y="200" width="400" height="330" rx="12" class="z-v2"/>
+        <use href="#i-vnet" x="786" y="208" width="24" height="24"/>
+        <text x="816" y="224" class="t">workers-vnet · <tspan class="m">10.139.0.0/16</tspan></text>
+        <use href="#i-rg" x="816" y="230" width="13" height="13"/>
+        <text x="833" y="240" class="s">RG gerenciado pelo Databricks</text>
+        <rect x="786" y="282" width="368" height="100" rx="8" class="sub"/>
+        <use href="#i-subnet" x="794" y="288" width="17" height="17"/>
+        <text x="815" y="300" class="s">public-subnet · <tspan class="m">10.139.0.0/18</tspan></text>
+        <rect x="786" y="396" width="368" height="120" rx="8" class="sub"/>
+        <use href="#i-subnet" x="794" y="402" width="17" height="17"/>
+        <text x="815" y="414" class="s">private-subnet · <tspan class="m">10.139.64.0/18</tspan></text>
+        <rect x="798" y="252" width="130" height="22" rx="11" class="pill"/>
+        <use href="#i-nsg" x="806" y="254" width="18" height="18"/>
+        <text x="828" y="267" class="lbl c-warn">workers-sg</text>
+      </g>
+      <g data-s="7">
+        <rect x="1030" y="210" width="126" height="36" rx="8" class="box" style="stroke:var(--ctrl)"/>
+        <use href="#i-nat" x="1046" y="218" width="20" height="20"/>
+        <text x="1072" y="226" class="t">NAT gateway</text>
+        <text x="1072" y="240" class="s">só saída</text>
+        <path d="M1093 320V248" class="fl f-ctrl" marker-end="url(#a-ctrl)"/>
+        <path d="M1093 210V130" class="fl f-ctrl" marker-end="url(#a-ctrl)"/>
+        <text x="1100" y="182" class="lbl" style="fill:var(--ctrl)">saída</text>
+      </g>
+      <g data-s="4 7">
+        <rect x="960" y="320" width="180" height="170" rx="10" class="box" style="stroke:var(--data);stroke-width:1.4"/>
+        <use href="#i-dbx" x="1112" y="326" width="22" height="22"/>
+        <text x="972" y="342" class="t">Cluster clássico</text>
+        <text x="972" y="358" class="s">driver + workers</text>
+        <text x="972" y="376" class="s">1 placa em cada sub-rede,</text>
+        <text x="972" y="390" class="s">sem IP público</text>
+        <text x="972" y="420" class="m">cdc_core</text>
+        <text x="972" y="436" class="m">legado_contratos</text>
+        <text x="972" y="452" class="m">arquivos_sftp</text>
+        <text x="972" y="468" class="m">reverse_etl</text>
+      </g>
+
+      <!-- Storage -->
+      <g data-s="7 8">
+        <rect x="780" y="556" width="236" height="74" rx="10" class="box"/>
+        <use href="#i-storage" x="792" y="566" width="26" height="26"/>
+        <text x="824" y="580" class="t">Storage account (ADLS)</text>
+        <text x="824" y="596" class="s">tabelas Delta do banking_lab</text>
+        <text x="824" y="612" class="s">via access connector</text>
+        <path d="M1000 490V554" class="fl f-mut" marker-end="url(#a-mut)"/>
+      </g>
+
+      <!-- Tráfego -->
+      <g data-s="4 5">
+        <path d="M958 445H586" class="fl f-data" marker-end="url(#a-data)"/>
+        <text x="692" y="437" class="lbl c-data" text-anchor="middle">10.139.x.x → 10.50.1.10</text>
+        <text x="692" y="463" class="m" text-anchor="middle">:50000 · :9092 · :2222</text>
+      </g>
+      <g data-s="6">
+        <path d="M212 348H300V356H314" class="fl f-ssh" marker-end="url(#a-ssh)"/>
+        <text x="236" y="340" class="lbl c-ssh">:22</text>
+        <path d="M212 398H290V541H314" class="fl f-tun" marker-end="url(#a-ssh)"/>
+      </g>
+      <g data-s="8">
+        <path d="M880 128L606 198" class="fl f-block"/>
+        <g transform="translate(742 163)"><path d="M-7 -7L7 7M7 -7L-7 7" stroke="var(--block)" stroke-width="3" style="stroke:var(--block)"/></g>
+        <text x="742" y="190" class="lbl c-block" text-anchor="middle">sem rota até 10.50.x</text>
+      </g>
+
+      <!-- Números das cenas -->
+      <g class="badge" data-s="1"><circle cx="264" cy="200" r="12"/><text x="264" y="204" text-anchor="middle">1</text></g>
+      <g class="badge" data-s="2"><circle cx="692" cy="276" r="12"/><text x="692" y="280" text-anchor="middle">2</text></g>
+      <g class="badge" data-s="3"><circle cx="430" cy="273" r="12"/><text x="430" y="277" text-anchor="middle">3</text></g>
+      <g class="badge" data-s="4"><circle cx="940" cy="445" r="12"/><text x="940" y="449" text-anchor="middle">4</text></g>
+      <g class="badge" data-s="5"><circle cx="304" cy="445" r="12"/><text x="304" y="449" text-anchor="middle">5</text></g>
+      <g class="badge" data-s="6"><circle cx="30" cy="328" r="12"/><text x="30" y="332" text-anchor="middle">6</text></g>
+      <g class="badge" data-s="7"><circle cx="1030" cy="210" r="12"/><text x="1030" y="214" text-anchor="middle">7</text></g>
+      <g class="badge" data-s="8"><circle cx="822" cy="72" r="12"/><text x="822" y="76" text-anchor="middle">8</text></g>
+      <g class="badge" data-s="9"><circle cx="244" cy="160" r="12"/><text x="244" y="164" text-anchor="middle">9</text></g>
+    </svg>
+    </div>
+  </figure>
+
+  <div class="legenda" aria-hidden="true">
+    <span><i style="border-color:var(--accent);border-top-width:4px"></i>peering</span>
+    <span><i style="border-color:var(--data)"></i>dados (Databricks → on-prem)</span>
+    <span><i style="border-color:var(--ssh)"></i>SSH e túnel (você → VM)</span>
+    <span><i style="border-color:var(--ctrl)"></i>controle (HTTPS e saída pelo NAT)</span>
+    <span><i style="border-color:var(--block);border-top-style:dashed"></i>sem rota</span>
+  </div>
+
+  <section class="icones" aria-label="Ícones e onde encontrar cada recurso no portal do Azure">
+    <h3>Ícones: onde achar cada peça no portal do Azure</h3>
+    <ul>
+      <li><svg viewBox="0 0 24 24"><use href="#i-sub"/></svg><span><strong>Subscription</strong> (assinatura) · a sua assinatura Azure</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-rg"/></svg><span><strong>Resource group</strong> · rg-onprem-simulado e o RG gerenciado databricks-rg-…</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-vnet"/></svg><span><strong>Virtual network</strong> · vnet-onprem e workers-vnet</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-subnet"/></svg><span><strong>Subnet</strong> · dentro da VNet, em Settings → Subnets</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-peer"/></svg><span><strong>Peering</strong> · na VNet, em Settings → Peerings</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-nsg"/></svg><span><strong>Network security group</strong> · nsg-servidores e workers-sg</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-vm"/></svg><span><strong>Virtual machine</strong> · vm-onprem-db2</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-pip"/></svg><span><strong>Public IP address</strong> · pip-vm-onprem-admin</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-nat"/></svg><span><strong>NAT gateway</strong> · no RG gerenciado do Databricks</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-storage"/></svg><span><strong>Storage account</strong> · dbstorage… (ADLS Gen2)</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-dbx"/></svg><span><strong>Azure Databricks</strong> · o workspace, no seu resource group</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-docker"/></svg><span><strong>Docker</strong> · roda dentro da VM, não aparece no portal</span></li>
+    </ul>
+    <p>Ícones desenhados no estilo dos ícones oficiais do Azure. O conjunto oficial (Azure Architecture Icons) pode ser baixado no Microsoft Learn para usar no draw.io.</p>
+  </section>
+
+  <section class="player" aria-live="polite">
+    <div class="linha">
+      <div class="n" id="pNum">·</div>
+      <div class="txt">
+        <div class="fase" id="pFase">Visão geral</div>
+        <h2 id="pTit"></h2>
+        <p id="pDesc"></p>
+      </div>
+      <div class="ctrl">
+        <button type="button" id="bAnt">◀ Anterior</button>
+        <button type="button" id="bTudo">Ver tudo</button>
+        <button type="button" id="bProx" class="primary">Próximo ▶</button>
+      </div>
+    </div>
+    <div class="teste" id="pTeste" hidden>
+      <div class="rotulo" id="pTesteRot">Teste você mesmo</div>
+      <div class="code"><pre id="pCmd"></pre><button type="button" class="copiar" id="bCopiar">Copiar</button></div>
+    </div>
+  </section>
+
+  <section class="cenas" id="cenas"></section>
+</main>
+
+<script>
+const CENAS = [
+  { grupo: "As redes", tit: "Duas redes que não se conhecem",
+    desc: "A VNet do on-prem (10.50.0.0/16) e a VNet dos clusters do Databricks (10.139.0.0/16) são redes privadas separadas. Sem nada ligando as duas, um pacote saindo de 10.139.x não tem caminho até 10.50.x. Os blocos de endereço não se sobrepõem: é a condição para poder ligar as redes depois.",
+    onde: "PowerShell", cmd: "az network vnet show -g rg-onprem-simulado -n vnet-onprem --query \"{vnet:name, faixa:addressSpace.addressPrefixes[0]}\" -o table\naz network vnet show -g <RG_GERENCIADO_DO_DATABRICKS> -n workers-vnet --query \"{vnet:name, faixa:addressSpace.addressPrefixes[0]}\" -o table" },
+  { grupo: "As redes", tit: "O peering liga as duas",
+    desc: "Peering é uma ligação direta entre duas VNets pela rede interna da Microsoft, sem passar pela internet. Ele precisa existir nos dois sentidos, por isso o Terraform cria dois (onprem → databricks e databricks → onprem). No banco real, esse papel é do ExpressRoute ou de uma VPN entre o datacenter e o Azure.",
+    onde: "PowerShell", cmd: "az network vnet peering list -g rg-onprem-simulado --vnet-name vnet-onprem -o table" },
+  { grupo: "As redes", tit: "O NSG decide quem entra",
+    desc: "O NSG é o firewall da sub-rede. As regras valem por prioridade, do menor número para o maior: 100 libera a porta 22 só para o seu IP; 200 libera 50000, 9092 e 2222 só para 10.139.0.0/16 (os clusters); 4000 nega todo o resto. Foi a regra 100 que bloqueou o seu SSH quando o IP de casa mudou.",
+    onde: "PowerShell", cmd: "az network nsg rule list -g rg-onprem-simulado --nsg-name nsg-servidores --query \"sort_by([].{regra:name, prioridade:priority, origem:sourceAddressPrefix, porta:destinationPortRange, portas:join(',', destinationPortRanges), acao:access}, &prioridade)\" -o table" },
+  { grupo: "O tráfego", tit: "O caminho de uma leitura JDBC",
+    desc: "Um worker (10.139.x.x) abre uma conexão para 10.50.1.10:50000. A rota do peering leva o pacote até a vnet-onprem; o NSG confere a origem (10.139.0.0/16) e a porta (50000) e deixa passar; na VM, o Docker entrega a porta 50000 ao container do Db2. A resposta volta pelo mesmo caminho. Kafka (9092) e SFTP (2222) seguem a mesma rota.",
+    onde: "SSH na VM", cmd: "sudo ss -tlnp | grep -E ':(50000|9092|2222|8080|8083) '" },
+  { grupo: "O tráfego", tit: "O detalhe do Kafka: advertised listener",
+    desc: "O cliente Kafka conecta duas vezes: primeiro pergunta ao broker onde estão os tópicos, depois conecta no endereço que o broker responde. Por isso o Kafka anuncia 10.50.1.10:9092 para quem vem de fora e kafka:29092 para os containers. Se ele respondesse kafka:29092 ao Databricks, a primeira conexão funcionaria e a segunda falharia: esse nome só existe dentro do Docker.",
+    onde: "SSH na VM", cmd: "grep -n ADVERTISED /opt/onprem/docker-compose.yml" },
+  { grupo: "O tráfego", tit: "Como você entra: SSH e túnel",
+    desc: "Só a porta 22 tem IP público, e só para o seu IP. O Kafka UI e o Kafka Connect escutam em 127.0.0.1: nem a rede da VM alcança essas portas. O túnel (ssh -L) leva o seu localhost:50000 e localhost:8080 para dentro da VM, pela própria conexão SSH, que é criptografada. O Databricks você acessa pela internet, no control plane.",
+    onde: "PowerShell", cmd: "Invoke-RestMethod https://api.ipify.org   # o seu IP de saída, que precisa estar no NSG" },
+  { grupo: "Databricks", tit: "Control plane e saída pelo NAT",
+    desc: "A interface, a API e o agendador de jobs ficam no control plane, na rede da Databricks. O cluster não recebe conexões de fora: ele mesmo abre uma conexão de saída para o control plane (secure cluster connectivity), passando pelo NAT gateway. Por isso os clusters não têm IP público. E por isso o NAT cobra cerca de R$ 6 por dia mesmo sem cluster ligado.",
+    onde: "PowerShell", cmd: "az resource list -g <RG_GERENCIADO_DO_DATABRICKS> --query \"[].{recurso:name, tipo:type}\" -o table" },
+  { grupo: "Databricks", tit: "Por que o serverless não alcança o on-prem",
+    desc: "O compute serverless roda na rede da Databricks, fora da sua assinatura: não existe peering entre ele e a vnet-onprem. Por isso a Gold, que só lê o Lakehouse, roda em serverless, e as tarefas que falam com o Db2, o Kafka e o SFTP rodam no cluster clássico. Para o serverless chegar ao on-prem seria preciso NCC + private endpoint + Private Link Service.",
+    onde: "Notebook serverless no Databricks", cmd: "import socket\ns = socket.socket(); s.settimeout(5)\ntry:\n    s.connect((\"10.50.1.10\", 50000)); print(\"conectou\")\nexcept Exception as e:\n    print(\"sem rota:\", e)   # esperado aqui: timeout" },
+  { grupo: "No banco de verdade", tit: "O que muda em produção",
+    desc: "Peering vira ExpressRoute ou VPN site-to-site. Um firewall central (topologia hub-and-spoke) inspeciona o tráfego entre o datacenter e a nuvem. Um DNS privado resolve os nomes dos servidores do datacenter. O SSH público dá lugar a Azure Bastion ou VPN. O serverless ganha NCC e Private Link. E cada porta passa pela aprovação do time de segurança, que costuma ser a etapa mais demorada.",
+    onde: null, cmd: null },
+];
+const GERAL = { grupo: "Visão geral", tit: "Quem fala com quem",
+  desc: "Você fala com o Databricks pela internet (HTTPS) e com a VM só por SSH. O cluster clássico fala com a VM pela rede privada (peering), nas portas 50000, 9092 e 2222. O serverless não tem caminho até a VM. Clique em Próximo para ver cada peça." };
+
+const svg = document.getElementById("rede");
+const els = [...svg.querySelectorAll("[data-s]")];
+const $ = id => document.getElementById(id);
+let atual = 0;
+
+const grupos = [];
+CENAS.forEach((c, i) => {
+  let g = grupos.find(x => x.nome === c.grupo);
+  if (!g) { g = { nome: c.grupo, itens: [] }; grupos.push(g); }
+  g.itens.push(i + 1);
+});
+$("cenas").innerHTML = grupos.map(g => `<div class="grupo"><h3>${g.nome}</h3><ol>${g.itens.map(n =>
+  `<li><button type="button" id="cena-${n}" data-n="${n}"><span class="k">${n}</span><span>${CENAS[n - 1].tit}</span></button></li>`).join("")}</ol></div>`).join("");
+$("cenas").addEventListener("click", e => { const b = e.target.closest("button[data-n]"); if (b) mostra(+b.dataset.n); });
+
+function mostra(n) {
+  atual = Math.max(0, Math.min(CENAS.length, n));
+  const c = atual ? CENAS[atual - 1] : GERAL;
+  svg.classList.toggle("focus", atual > 0);
+  els.forEach(el => el.classList.toggle("on", el.dataset.s.split(" ").includes(String(atual))));
+  $("pNum").textContent = atual || "·";
+  $("pFase").textContent = atual ? `Cena ${atual} de ${CENAS.length} · ${c.grupo}` : c.grupo;
+  $("pTit").textContent = c.tit;
+  $("pDesc").textContent = c.desc;
+  $("pTeste").hidden = !c.cmd;
+  if (c.cmd) { $("pCmd").textContent = c.cmd; $("pTesteRot").textContent = `Teste você mesmo · ${c.onde}`; }
+  $("bAnt").disabled = atual === 0;
+  $("bProx").textContent = atual === CENAS.length ? "Recomeçar ↺" : "Próximo ▶";
+  document.querySelectorAll("#cenas button[data-n]").forEach(b =>
+    +b.dataset.n === atual ? b.setAttribute("aria-current", "step") : b.removeAttribute("aria-current"));
+}
+$("bProx").addEventListener("click", () => mostra(atual === CENAS.length ? 1 : atual + 1));
+$("bAnt").addEventListener("click", () => mostra(atual - 1));
+$("bTudo").addEventListener("click", () => mostra(0));
+$("bCopiar").addEventListener("click", async e => {
+  const b = e.currentTarget, pre = $("pCmd");
+  try { await navigator.clipboard.writeText(pre.textContent); b.textContent = "Copiado"; }
+  catch (err) { const r = document.createRange(); r.selectNodeContents(pre); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "Selecionado"; }
+  setTimeout(() => { b.textContent = "Copiar"; }, 1500);
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") mostra(atual === CENAS.length ? 1 : atual + 1);
+  if (e.key === "ArrowLeft") mostra(atual - 1);
+  if (e.key === "Escape") mostra(0);
+});
+mostra(0);
+</script>
+<script>addEventListener("load",()=>{document.fonts.ready.then(()=>mostra(+location.hash.slice(1)||0))});</script>

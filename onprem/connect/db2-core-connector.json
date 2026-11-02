@@ -1,0 +1,22 @@
+{
+  "connector.class": "io.debezium.connector.db2.Db2Connector",
+  "tasks.max": "1",
+  "database.hostname": "db2",
+  "database.port": "50000",
+  "database.user": "db2inst1",
+  "database.password": "${file:/kafka/secrets/db2.properties:DB2INST1_PASSWORD}",
+  "database.dbname": "BANCO",
+  "topic.prefix": "corebank",
+  "table.include.list": "CORE.CLIENTES,CORE.CONTAS,CORE.TRANSACOES",
+  "snapshot.mode": "initial",
+  "schema.history.internal.kafka.bootstrap.servers": "kafka:29092",
+  "schema.history.internal.kafka.topic": "_schema-history.corebank",
+  "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "key.converter.schemas.enable": "false",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false",
+  "decimal.handling.mode": "string",
+  "time.precision.mode": "connect",
+  "heartbeat.interval.ms": "10000",
+  "tombstones.on.delete": "false"
+}

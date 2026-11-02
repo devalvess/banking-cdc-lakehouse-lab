@@ -1,0 +1,26 @@
+resources:
+  pipelines:
+    cdc_core:
+      name: cdc_core_bancario
+      catalog: ${var.catalogo}
+      schema: bronze
+      root_path: ../src/02_cdc
+      libraries:
+        - glob:
+            include: ../src/02_cdc/transformations/**
+      configuration:
+        kafka_bootstrap: ${var.onprem_host}:9092
+      # Compute clássico: roda na VNet do workspace, que tem peering com a rede on-prem.
+      # (Serverless exigiria NCC + Private Link — ver README, seção Serverless.)
+      serverless: false
+      clusters:
+        - label: default
+          node_type_id: ${var.node_type}
+          num_workers: 1
+          custom_tags:
+            projeto: banking-cdc-lakehouse-lab
+            carga: pipeline_cdc_core
+      continuous: false
+      development: true
+      photon: false
+      channel: current

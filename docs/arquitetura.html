@@ -1,0 +1,457 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arquitetura Banking Lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: figura larga (on-prem → rede → Databricks) com passos numerados; player de passos e roteiro abaixo */
+:root {
+  --bg: #f4f6f9; --fg: #18212e; --muted: #5a6677; --line: #c3ccd8; --panel: #ffffff;
+  --zone-onprem: #e9ecf0; --zone-net: #fbf3e4; --zone-cloud: #e6eefa; --accent: #1f5fbf;
+  --cdc: #1d8a4e; --files: #c06510; --jdbc: #6a45c2; --rev: #c42727; --warn: #b5590a;
+  --font: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f141b; --fg: #e5e9ef; --muted: #98a3b3; --line: #3a4452; --panel: #19212c;
+  --zone-onprem: #161b23; --zone-net: #241e12; --zone-cloud: #122036; --accent: #6ea8ff;
+  --cdc: #4ec98a; --files: #f2a04c; --jdbc: #a98cf2; --rev: #ff6e6e; --warn: #f2a04c; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f141b; --fg: #e5e9ef; --muted: #98a3b3; --line: #3a4452; --panel: #19212c;
+  --zone-onprem: #161b23; --zone-net: #241e12; --zone-cloud: #122036; --accent: #6ea8ff;
+  --cdc: #4ec98a; --files: #f2a04c; --jdbc: #a98cf2; --rev: #ff6e6e; --warn: #f2a04c; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--font); line-height: 1.5;
+  padding-block: 28px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+main { max-width: 1240px; margin: 0 auto; display: grid; gap: 22px; }
+header h1 { font-size: 1.6rem; font-weight: 700; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 72ch; }
+figure { margin: 0; }
+.scroll { overflow-x: auto; border-radius: 16px; }
+svg.arq { display: block; width: 100%; min-width: 980px; height: auto; color: var(--fg); font-family: var(--font); }
+
+/* SVG */
+.z-onprem { fill: var(--zone-onprem); } .z-net { fill: var(--zone-net); } .z-cloud { fill: var(--zone-cloud); }
+.sub { fill: none; stroke: var(--line); stroke-dasharray: 5 4; }
+.box { fill: var(--panel); stroke: var(--line); }
+.chip { fill: var(--zone-onprem); stroke: var(--line); }
+.chip-rev { fill: var(--panel); stroke: var(--rev); stroke-width: 1.5; }
+.zt { fill: var(--fg); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; }
+.zs { fill: var(--muted); font-size: 11px; font-family: var(--mono); }
+.t { fill: var(--fg); font-size: 12.5px; font-weight: 600; }
+.s { fill: var(--muted); font-size: 10.5px; }
+.m { fill: var(--muted); font-size: 10px; font-family: var(--mono); }
+.lbl { font-size: 10.5px; font-weight: 600; }
+.fl { fill: none; stroke-width: 2; }
+.f-cdc { stroke: var(--cdc); stroke-width: 3; } .c-cdc { fill: var(--cdc); }
+.f-files { stroke: var(--files); stroke-dasharray: 7 4; } .c-files { fill: var(--files); }
+.f-jdbc { stroke: var(--jdbc); stroke-dasharray: 7 4; } .c-jdbc { fill: var(--jdbc); }
+.f-rev { stroke: var(--rev); stroke-width: 3.5; } .c-rev { fill: var(--rev); }
+.f-fg { stroke: var(--muted); stroke-width: 1.6; } .c-fg { fill: var(--muted); }
+.pill { fill: var(--zone-net); stroke-width: 1.4; }
+.ic { color: var(--muted); }
+.badge circle { fill: var(--fg); stroke: var(--bg); stroke-width: 2.5; }
+.badge text { fill: var(--bg); font-size: 11.5px; font-weight: 700; font-family: var(--mono); }
+
+/* Modo passo a passo: destaca só o que pertence ao passo atual */
+svg.arq [data-s] { transition: opacity .25s ease; }
+svg.arq.focus [data-s] { opacity: .13; }
+svg.arq.focus [data-s].on { opacity: 1; }
+svg.arq.focus .badge.on circle { fill: var(--accent); }
+svg.arq.focus .badge.on text { fill: #fff; }
+@media (prefers-reduced-motion: reduce) { svg.arq [data-s] { transition: none; } }
+
+/* Player */
+.player { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px;
+  display: grid; grid-template-columns: auto 1fr auto; gap: 18px; align-items: center; }
+.player .n { font-family: var(--mono); font-weight: 600; font-size: 2rem; line-height: 1; color: var(--accent); min-width: 2.2ch; text-align: center; }
+.player .txt { min-width: 0; }
+.player .fase { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.player h2 { margin: 2px 0 4px; font-size: 1.1rem; }
+.player p { margin: 0; color: var(--muted); max-width: 80ch; }
+.ctrl { display: flex; gap: 8px; flex-wrap: wrap; }
+button { font: inherit; font-size: 0.9rem; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); padding: 7px 14px; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .45; cursor: default; }
+@media (max-width: 700px) { .player { grid-template-columns: auto 1fr; } .ctrl { grid-column: 1 / -1; } }
+
+/* Roteiro */
+.roteiro { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.fase-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 14px 12px; min-width: 0; }
+.fase-card h3 { margin: 0 0 8px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.fase-card ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.fase-card li button { width: 100%; text-align: left; background: transparent; border-color: transparent; padding: 6px 8px;
+  display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: start; font-size: 0.88rem; }
+.fase-card li button .k { font-family: var(--mono); font-weight: 600; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--fg); color: var(--bg); font-size: 0.75rem; }
+.fase-card li button[aria-current="step"] { background: var(--zone-cloud); border-color: var(--accent); }
+.fase-card li button[aria-current="step"] .k { background: var(--accent); color: #fff; }
+.nota { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
+.icones { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
+.icones ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 18px; }
+.icones li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: center; font-size: 0.86rem; min-width: 0; }
+.icones svg { width: 22px; height: 22px; }
+.icones p { margin: 8px 0 0; font-size: 0.78rem; color: var(--muted); }
+</style>
+
+<main>
+  <header>
+    <h1>Banking CDC Lakehouse Lab</h1>
+    <p>A jornada do dado em 11 passos: do Db2 on-premises ao Lakehouse e de volta. Use <strong>Próximo</strong> (ou a seta → do teclado) para percorrer o desenho passo a passo.</p>
+  </header>
+
+  <figure>
+    <div class="scroll">
+    <svg class="arq" id="arq" viewBox="0 0 1200 600" role="img" aria-label="Arquitetura em 11 passos: o simulador grava no Db2; o log é lido pelo ASN Capture; o Debezium publica no Kafka; a rede privada liga a VM ao Databricks; pipeline CDC, ingestão SFTP e carga JDBC levam os dados à Bronze e Silver; a reconciliação libera a Gold, preparada para um Genie Space; o reverse ETL grava na staging do Db2 e a procedure aplica em produção.">
+      <defs>
+        <marker id="a-cdc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="c-cdc"/></marker>
+        <marker id="a-files" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="c-files"/></marker>
+        <marker id="a-jdbc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="c-jdbc"/></marker>
+        <marker id="a-rev" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="c-rev"/></marker>
+        <marker id="a-fg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="c-fg"/></marker>
+        <symbol id="ic-dice" viewBox="0 0 20 20"><rect x="2" y="2" width="16" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="7" r="1.6" fill="currentColor"/><circle cx="13" cy="13" r="1.6" fill="currentColor"/><circle cx="13" cy="7" r="1.6" fill="currentColor"/><circle cx="7" cy="13" r="1.6" fill="currentColor"/></symbol>
+        <symbol id="ic-folder" viewBox="0 0 20 20"><path d="M2 5h6l2 2h8v9H2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+        <symbol id="ic-db" viewBox="0 0 20 20"><ellipse cx="10" cy="4.5" rx="7" ry="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 4.5v11c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-11M3 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+        <symbol id="ic-warn" viewBox="0 0 20 20"><path d="M10 2L19 18H1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 8v4" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="15" r="1.1" fill="currentColor"/></symbol>
+        <symbol id="ic-kafka" viewBox="0 0 20 20"><circle cx="10" cy="3.5" r="2.3" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="16.5" r="2.3" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="16.5" cy="6.5" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="16.5" cy="13.5" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 5.8v1.6M10 12.6v1.6M12.4 9l2.4-1.4M12.4 11l2.4 1.4" stroke="currentColor" stroke-width="1.4"/></symbol>
+        <symbol id="ic-chat" viewBox="0 0 20 20"><path d="M3 4h14v9H8l-4 3v-3H3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+        <symbol id="ic-lock" viewBox="0 0 20 20"><rect x="4" y="9" width="12" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+        <symbol id="ic-nb" viewBox="0 0 20 20"><rect x="4" y="2" width="12" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 7h6M7 10.5h6M7 14h4" stroke="currentColor" stroke-width="1.5"/></symbol>
+        <symbol id="ic-flow" viewBox="0 0 20 20"><circle cx="4" cy="10" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="4.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="15.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6.2 9l7.6-3.6M6.2 11l7.6 3.6" stroke="currentColor" stroke-width="1.5"/></symbol>
+        <symbol id="ic-back" viewBox="0 0 20 20"><path d="M16 6H6l3-3M6 6l3 3M4 14h10l-3 3M14 14l-3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <!-- Ícones no estilo dos ícones do Azure (desenhados à mão, cores dos originais) -->
+        <symbol id="i-vnet" viewBox="0 0 24 24"><path d="M7 5L1.5 12 7 19M17 5l5.5 7-5.5 7" fill="none" stroke="#0078D4" stroke-width="2.4" stroke-linejoin="round"/><circle cx="7.5" cy="12" r="1.8" fill="#7FBA00"/><circle cx="12" cy="12" r="1.8" fill="#7FBA00"/><circle cx="16.5" cy="12" r="1.8" fill="#7FBA00"/></symbol>
+        <symbol id="i-nsg" viewBox="0 0 24 24"><path d="M12 2l8.5 3.2V11c0 5.3-3.6 9.6-8.5 11-4.9-1.4-8.5-5.7-8.5-11V5.2z" fill="#0078D4"/><path d="M12 4.6l6 2.3v4.3c0 3.9-2.5 7.2-6 8.4z" fill="#50E6FF"/></symbol>
+        <symbol id="i-vm" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="13.5" rx="1.5" fill="#0078D4"/><rect x="4" y="5" width="16" height="9.5" fill="#50E6FF"/><path d="M9 16.5h6l1 3.5H8z" fill="#8A8A8A"/><rect x="6" y="19.6" width="12" height="1.8" rx=".9" fill="#8A8A8A"/></symbol>
+        <symbol id="i-peer" viewBox="0 0 24 24"><path d="M5 6.5l4.2 5.5L5 17.5.8 12zM19 6.5l4.2 5.5-4.2 5.5-4.2-5.5z" fill="#0078D4"/><path d="M8.6 12h6.8" stroke="#7FBA00" stroke-width="2.6"/></symbol>
+        <symbol id="i-storage" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2" fill="#A0A0A0"/><rect x="2" y="4" width="20" height="4.5" rx="1.5" fill="#0078D4"/><rect x="4" y="10.5" width="16" height="2.6" fill="#37C2B1"/><rect x="4" y="15" width="16" height="2.6" fill="#37C2B1"/></symbol>
+        <symbol id="i-dbx" viewBox="0 0 24 24"><path d="M12 3l9.5 5.2L12 13.4 2.5 8.2z" fill="#FF3621"/><path d="M2.5 12.2l9.5 5.2 9.5-5.2M2.5 16.2l9.5 5.2 9.5-5.2" fill="none" stroke="#FF3621" stroke-width="2.3" stroke-linejoin="round"/></symbol>
+        <symbol id="i-docker" viewBox="0 0 24 24"><g fill="#2496ED"><rect x="3" y="9.5" width="4" height="4"/><rect x="8" y="9.5" width="4" height="4"/><rect x="13" y="9.5" width="4" height="4"/><rect x="8" y="4.5" width="4" height="4"/><path d="M1.5 14.8h20c-.6 3.4-3.4 5.4-8.6 5.4-6 0-10-1.9-11.4-5.4z"/></g></symbol>
+      </defs>
+
+      <!-- Zonas (sempre visíveis) -->
+      <rect x="16" y="36" width="604" height="548" rx="14" class="z-onprem"/>
+      <use href="#i-vm" x="32" y="47" width="26" height="26"/>
+      <text x="64" y="62" class="zt">ON-PREMISES (SIMULADO)</text>
+      <text x="64" y="80" class="zs">VM vm-onprem-db2 · 10.50.1.10 · Docker</text>
+      <use href="#i-docker" x="336" y="68" width="16" height="16"/>
+
+      <rect x="636" y="36" width="96" height="548" rx="14" class="z-net"/>
+      <g data-s="4">
+        <rect x="636" y="36" width="96" height="548" rx="14" fill="none" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="4 4" style="stroke:var(--warn)"/>
+        <use href="#ic-lock" x="674" y="50" width="20" height="20" class="ic"/>
+        <text x="684" y="86" class="zt" text-anchor="middle" font-size="11">REDE</text>
+        <text x="684" y="100" class="zt" text-anchor="middle" font-size="11">PRIVADA</text>
+        <use href="#i-peer" x="672" y="494" width="24" height="24"/>
+        <text x="684" y="530" class="s" text-anchor="middle">VNet peering</text>
+        <text x="684" y="544" class="s" text-anchor="middle">(simula ExpressRoute)</text>
+        <use href="#i-nsg" x="652" y="557" width="16" height="16"/>
+        <text x="672" y="570" class="s">3 portas</text>
+      </g>
+
+      <rect x="748" y="36" width="436" height="548" rx="14" class="z-cloud"/>
+      <use href="#i-dbx" x="764" y="46" width="28" height="28"/>
+      <text x="798" y="62" class="zt">AZURE DATABRICKS</text>
+      <text x="798" y="80" class="zs">Unity Catalog · banking_lab</text>
+      <rect x="762" y="92" width="176" height="436" rx="10" class="sub"/>
+      <text x="850" y="518" class="s" text-anchor="middle">compute clássico · na VNet</text>
+      <use href="#i-storage" x="766" y="545" width="24" height="24"/>
+      <text x="796" y="554" class="s">Tabelas Delta no ADLS da assinatura</text>
+      <text x="796" y="570" class="s">Grants, máscaras e auditoria no Unity Catalog</text>
+
+      <!-- Passo 1: simulador -->
+      <g data-s="1">
+        <rect x="32" y="198" width="128" height="74" rx="10" class="box"/>
+        <use href="#ic-dice" x="42" y="208" width="20" height="20" class="ic"/>
+        <text x="68" y="223" class="t">Simulador</text>
+        <text x="44" y="245" class="s">sistemas do banco</text>
+        <text x="44" y="259" class="s">(caixa, app, contratos)</text>
+        <path d="M160 235H188" class="fl f-fg" marker-end="url(#a-fg)"/>
+        <text x="175" y="227" class="m" text-anchor="middle">grava</text>
+        <path d="M96 198V125H194" class="fl f-files" marker-end="url(#a-files)"/>
+        <text x="145" y="117" class="lbl c-files" text-anchor="middle">CSV diário</text>
+      </g>
+      <g data-s="1 6">
+        <rect x="196" y="102" width="150" height="46" rx="10" class="box"/>
+        <use href="#ic-folder" x="205" y="115" width="20" height="20" class="ic"/>
+        <text x="231" y="121" class="t">SFTP</text>
+        <text x="231" y="137" class="m">saldos_diarios.csv</text>
+      </g>
+
+      <!-- Db2 -->
+      <g data-s="1 2 7 10 11">
+        <rect x="190" y="160" width="160" height="400" rx="12" class="box"/>
+        <use href="#ic-db" x="200" y="168" width="22" height="22" class="ic"/>
+        <text x="228" y="181" class="t">IBM Db2</text>
+        <text x="228" y="195" class="m">BANCO · :50000</text>
+      </g>
+      <g data-s="1 2">
+        <rect x="202" y="210" width="136" height="52" rx="8" class="chip"/>
+        <text x="212" y="228" class="t" font-size="11.5">CORE <tspan class="c-cdc" font-size="10">· com CDC</tspan></text>
+        <text x="212" y="242" class="s">clientes · contas ·</text>
+        <text x="212" y="255" class="s">transações</text>
+      </g>
+      <g data-s="2">
+        <use href="#ic-warn" x="204" y="281" width="16" height="16" style="color:var(--warn)"/>
+        <text x="225" y="292" class="lbl" style="fill:var(--warn)">archive log</text>
+        <text x="225" y="306" class="s">cresce se o CDC parar</text>
+      </g>
+      <g data-s="1 7">
+        <rect x="202" y="332" width="136" height="46" rx="8" class="chip"/>
+        <text x="212" y="350" class="t" font-size="11.5">LEGADO <tspan class="c-jdbc" font-size="10">· sem CDC</tspan></text>
+        <text x="212" y="366" class="s">contratos · agências</text>
+      </g>
+      <g data-s="10 11">
+        <rect x="202" y="420" width="136" height="132" rx="8" class="chip-rev"/>
+        <text x="212" y="438" class="t" font-size="11.5">CREDITO</text>
+        <rect x="210" y="462" width="122" height="26" rx="6" class="chip"/>
+        <text x="218" y="479" class="s">staging (STG_LIMITE)</text>
+      </g>
+      <g data-s="11">
+        <path d="M270 489V500" class="fl f-fg" marker-end="url(#a-fg)"/>
+        <text x="278" y="498" class="m">procedure</text>
+        <rect x="210" y="502" width="122" height="26" rx="6" class="chip"/>
+        <text x="218" y="519" class="s"><tspan class="t" font-size="10.5">produção</tspan> (LIMITE)</text>
+        <text x="212" y="544" class="m">CTL_CARGA · auditoria</text>
+      </g>
+
+      <!-- Passo 2: log + ASN Capture -->
+      <g data-s="2">
+        <path d="M338 236H382" class="fl f-cdc" marker-end="url(#a-cdc)"/>
+        <text x="361" y="228" class="lbl c-cdc" text-anchor="middle">log</text>
+        <rect x="384" y="212" width="66" height="46" rx="8" class="box"/>
+        <text x="417" y="232" class="t" font-size="11" text-anchor="middle">ASN</text>
+        <text x="417" y="247" class="t" font-size="11" text-anchor="middle">Capture</text>
+      </g>
+      <!-- Passo 3: Debezium + Kafka -->
+      <g data-s="3">
+        <path d="M450 235H466" class="fl f-cdc" marker-end="url(#a-cdc)"/>
+        <path d="M542 235H558" class="fl f-cdc" marker-end="url(#a-cdc)"/>
+        <rect x="468" y="212" width="74" height="46" rx="8" class="box"/>
+        <text x="505" y="232" class="t" font-size="11" text-anchor="middle">Debezium</text>
+        <text x="505" y="247" class="m" text-anchor="middle">connector</text>
+        <text x="384" y="278" class="m">CD tables → tópicos corebank.CORE.*</text>
+      </g>
+      <g data-s="3 5">
+        <rect x="560" y="212" width="52" height="46" rx="8" class="box"/>
+        <use href="#ic-kafka" x="579" y="216" width="14" height="14" class="ic"/>
+        <text x="586" y="243" class="t" font-size="11" text-anchor="middle">Kafka</text>
+        <text x="586" y="254" class="m" text-anchor="middle" font-size="9">:9092</text>
+      </g>
+
+      <!-- Linhas que atravessam a rede -->
+      <g data-s="6">
+        <path d="M346 125H770" class="fl f-files" marker-end="url(#a-files)"/>
+        <text x="490" y="117" class="lbl c-files" text-anchor="middle">pull SFTP · paramiko</text>
+      </g>
+      <g data-s="5">
+        <path d="M612 235H770" class="fl f-cdc" marker-end="url(#a-cdc)"/>
+      </g>
+      <g data-s="7">
+        <path d="M338 355H770" class="fl f-jdbc" marker-end="url(#a-jdbc)"/>
+        <text x="490" y="347" class="lbl c-jdbc" text-anchor="middle">SELECT incremental · JDBC</text>
+      </g>
+      <g data-s="10">
+        <path d="M772 475H334" class="fl f-rev" marker-end="url(#a-rev)"/>
+        <text x="490" y="465" class="lbl c-rev" text-anchor="middle">grava staging via JDBC</text>
+      </g>
+      <g data-s="4 6"><rect x="656" y="117" width="56" height="16" rx="8" class="pill" style="stroke:var(--files)"/><text x="684" y="129" class="m" text-anchor="middle">:2222</text></g>
+      <g data-s="4 5"><rect x="656" y="227" width="56" height="16" rx="8" class="pill" style="stroke:var(--cdc)"/><text x="684" y="239" class="m" text-anchor="middle">:9092</text></g>
+      <g data-s="4 7"><rect x="656" y="347" width="56" height="16" rx="8" class="pill" style="stroke:var(--jdbc)"/><text x="684" y="359" class="m" text-anchor="middle">:50000</text></g>
+      <g data-s="4 10"><rect x="656" y="467" width="56" height="16" rx="8" class="pill" style="stroke:var(--rev)"/><text x="684" y="479" class="m" text-anchor="middle">:50000</text></g>
+
+      <!-- Databricks: tarefas no compute clássico -->
+      <g data-s="6">
+        <rect x="772" y="102" width="156" height="46" rx="10" class="box" style="stroke:var(--files)"/>
+        <use href="#ic-nb" x="780" y="115" width="18" height="18" class="ic"/>
+        <text x="804" y="121" class="t">Ingestão SFTP</text>
+        <text x="804" y="137" class="s">paramiko + Auto Loader</text>
+      </g>
+      <g data-s="5">
+        <rect x="772" y="212" width="156" height="46" rx="10" class="box" style="stroke:var(--cdc)"/>
+        <use href="#ic-flow" x="780" y="225" width="18" height="18" class="ic"/>
+        <text x="804" y="231" class="t">Pipeline CDC</text>
+        <text x="804" y="247" class="s">Lakeflow · AUTO CDC</text>
+      </g>
+      <g data-s="7 8">
+        <rect x="772" y="332" width="156" height="46" rx="10" class="box" style="stroke:var(--jdbc)"/>
+        <use href="#ic-nb" x="780" y="345" width="18" height="18" class="ic"/>
+        <text x="804" y="351" class="t">Carga legado</text>
+        <text x="804" y="367" class="s">watermark · deletes</text>
+      </g>
+      <g data-s="10 11">
+        <rect x="772" y="452" width="156" height="46" rx="10" class="box" style="stroke:var(--rev);stroke-width:1.5"/>
+        <use href="#ic-back" x="780" y="465" width="18" height="18" class="ic"/>
+        <text x="804" y="471" class="t">Reverse ETL</text>
+        <text x="804" y="487" class="s">versão Delta · auditoria</text>
+      </g>
+
+      <!-- Barramento para a Bronze -->
+      <path data-s="5 6 7" d="M928 125H962" class="fl f-fg" marker-end="url(#a-fg)"/>
+      <path data-s="5 7" d="M928 235H948V125" class="fl f-fg"/>
+      <path data-s="7" d="M928 355H948V235" class="fl f-fg"/>
+
+      <!-- Camadas -->
+      <g data-s="5 6 7">
+        <rect x="964" y="102" width="206" height="44" rx="10" class="box"/>
+        <circle cx="982" cy="124" r="8" fill="#b07440"/>
+        <text x="998" y="120" class="t">Bronze</text>
+        <text x="998" y="136" class="s">bruto, como chegou</text>
+      </g>
+      <path data-s="5 7" d="M1067 146V184" class="fl f-fg" marker-end="url(#a-fg)"/>
+      <g data-s="5 7 8">
+        <rect x="964" y="186" width="206" height="44" rx="10" class="box"/>
+        <circle cx="982" cy="208" r="8" fill="#9aa3ad"/>
+        <text x="998" y="204" class="t">Silver</text>
+        <text x="998" y="220" class="s">limpo · SCD2 · deletes lógicos</text>
+      </g>
+      <g data-s="8">
+        <path d="M1067 230V244" class="fl f-fg" marker-end="url(#a-fg)"/>
+        <polygon points="989,272 1067,246 1145,272 1067,298" class="box"/>
+        <text x="1067" y="276" class="t" font-size="11" text-anchor="middle">Reconciliação OK?</text>
+      </g>
+      <g data-s="8 9">
+        <path d="M1067 298V318" class="fl f-fg" marker-end="url(#a-fg)"/>
+        <text x="1075" y="312" class="m">sim</text>
+      </g>
+      <g data-s="9 10">
+        <rect x="964" y="320" width="206" height="50" rx="10" class="box" style="stroke:#c9a227;stroke-width:1.5"/>
+        <circle cx="982" cy="345" r="8" fill="#d4a72c"/>
+        <text x="998" y="341" class="t">Gold · serverless</text>
+        <text x="998" y="358" class="s">PII mascarada · filtro região</text>
+      </g>
+      <g data-s="9">
+        <path d="M1120 370V418" class="fl f-fg" stroke-dasharray="4 4" marker-end="url(#a-fg)"/>
+        <rect x="1070" y="420" width="100" height="44" rx="10" class="box" stroke-dasharray="4 4"/>
+        <use href="#ic-chat" x="1080" y="432" width="18" height="18" class="ic"/>
+        <text x="1104" y="440" class="t">Genie</text>
+        <text x="1104" y="454" class="s">próximo passo</text>
+      </g>
+      <g data-s="10">
+        <path d="M1000 370V475H930" class="fl f-fg" marker-end="url(#a-fg)"/>
+        <text x="1006" y="420" class="m">lê versão N</text>
+      </g>
+
+      <!-- Números dos passos -->
+      <g class="badge" data-s="1"><circle cx="32" cy="198" r="12"/><text x="32" y="202" text-anchor="middle">1</text></g>
+      <g class="badge" data-s="2"><circle cx="384" cy="212" r="12"/><text x="384" y="216" text-anchor="middle">2</text></g>
+      <g class="badge" data-s="3"><circle cx="468" cy="212" r="12"/><text x="468" y="216" text-anchor="middle">3</text></g>
+      <g class="badge" data-s="4"><circle cx="732" cy="40" r="12"/><text x="732" y="44" text-anchor="middle">4</text></g>
+      <g class="badge" data-s="5"><circle cx="772" cy="212" r="12"/><text x="772" y="216" text-anchor="middle">5</text></g>
+      <g class="badge" data-s="6"><circle cx="772" cy="102" r="12"/><text x="772" y="106" text-anchor="middle">6</text></g>
+      <g class="badge" data-s="7"><circle cx="772" cy="332" r="12"/><text x="772" y="336" text-anchor="middle">7</text></g>
+      <g class="badge" data-s="8"><circle cx="989" cy="272" r="12"/><text x="989" y="276" text-anchor="middle">8</text></g>
+      <g class="badge" data-s="9"><circle cx="964" cy="320" r="12"/><text x="964" y="324" text-anchor="middle">9</text></g>
+      <g class="badge" data-s="10"><circle cx="772" cy="452" r="12"/><text x="772" y="456" text-anchor="middle">10</text></g>
+      <g class="badge" data-s="11"><circle cx="202" cy="420" r="12"/><text x="202" y="424" text-anchor="middle">11</text></g>
+    </svg>
+    </div>
+  </figure>
+
+  <section class="icones" aria-label="Ícones do diagrama">
+    <ul>
+      <li><svg viewBox="0 0 24 24"><use href="#i-vm"/></svg><span><strong>Virtual machine</strong> · o servidor on-prem</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-docker"/></svg><span><strong>Docker</strong> · Db2, Kafka, Debezium, SFTP</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-peer"/></svg><span><strong>VNet peering</strong> · liga as duas redes</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-nsg"/></svg><span><strong>Network security group</strong> · firewall da sub-rede</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-dbx"/></svg><span><strong>Azure Databricks</strong> · workspace e clusters</span></li>
+      <li><svg viewBox="0 0 24 24"><use href="#i-storage"/></svg><span><strong>Storage account</strong> · ADLS com as tabelas Delta</span></li>
+    </ul>
+    <p>Ícones no estilo dos ícones do Azure. A rede em detalhe tem um desenho próprio.</p>
+  </section>
+
+  <section class="player" aria-live="polite">
+    <div class="n" id="pNum">0</div>
+    <div class="txt">
+      <div class="fase" id="pFase">Visão geral</div>
+      <h2 id="pTit">A jornada completa</h2>
+      <p id="pDesc">O dado nasce no Db2, atravessa a rede privada por três caminhos, passa pelas camadas Bronze, Silver e Gold e volta ao on-premises pelo reverse ETL.</p>
+    </div>
+    <div class="ctrl">
+      <button type="button" id="bAnt">◀ Anterior</button>
+      <button type="button" id="bTudo">Ver tudo</button>
+      <button type="button" id="bProx" class="primary">Próximo ▶</button>
+    </div>
+  </section>
+
+  <section class="roteiro" id="roteiro"></section>
+  <p class="nota">Os passos 5, 6 e 7 rodam em paralelo no job <code>carga_diaria_banco</code>. A Gold (9) só roda se a reconciliação (8) passar.</p>
+</main>
+
+<script>
+const PASSOS = [
+  { fase: "Origem · on-premises", tit: "O simulador gera os dados",
+    desc: "Faz o papel dos sistemas do banco: grava clientes, contas, transações e contratos no Db2 e gera o CSV diário de saldos no SFTP." },
+  { fase: "Origem · on-premises", tit: "O Db2 registra no log e o ASN Capture lê",
+    desc: "Toda mudança no schema CORE vai para o log. O ASN Capture lê o log e grava nas tabelas de mudança (CD tables). Se o consumo parar, o archive log cresce na origem." },
+  { fase: "Origem · on-premises", tit: "O Debezium publica no Kafka",
+    desc: "O Debezium lê as CD tables e publica um evento por mudança nos tópicos corebank.CORE.*, com retenção de 7 dias." },
+  { fase: "Rede", tit: "A rede privada liga os dois lados",
+    desc: "O Databricks alcança a VM pelo VNet peering, que simula o ExpressRoute. O NSG libera só as portas 2222, 9092 e 50000, e só para a sub-rede dos workers." },
+  { fase: "Ingestão · em paralelo", tit: "O pipeline CDC consome o Kafka",
+    desc: "O pipeline Lakeflow grava os eventos brutos na Bronze e aplica AUTO CDC na Silver. Clientes guardam histórico (SCD2); contas e transações ficam com a versão atual." },
+  { fase: "Ingestão · em paralelo", tit: "O notebook busca os arquivos no SFTP",
+    desc: "Baixa o CSV do SFTP para um Volume do Unity Catalog, e o Auto Loader carrega na Bronze só os arquivos novos." },
+  { fase: "Ingestão · em paralelo", tit: "O notebook lê o legado via JDBC",
+    desc: "Sem CDC: leitura incremental por DT_ATUALIZACAO com janela de sobreposição, detecção de deletes por comparação de chaves e delete lógico na Silver." },
+  { fase: "Qualidade e consumo", tit: "A reconciliação confere origem e Silver",
+    desc: "Compara contagem e somas do Db2 com a Silver. Se a divergência persistir por 3 passadas, o job para e a Gold não é publicada." },
+  { fase: "Qualidade e consumo", tit: "A Gold é publicada",
+    desc: "Uma tarefa serverless monta a Gold com máscara de PII e filtro por região. Nomes claros e comentário em toda coluna deixam a Gold preparada para um Genie Space, a evolução seguinte." },
+  { fase: "Volta ao on-premises", tit: "O reverse ETL envia para a staging",
+    desc: "Lê uma versão fixa da Gold (time travel), registra o lote na auditoria do Databricks e grava na staging do Db2 via JDBC, com no máximo 2 conexões." },
+  { fase: "Volta ao on-premises", tit: "A procedure aplica em produção",
+    desc: "SP_APLICAR_LIMITE valida contagem e soma. Se bater, aplica em produção em lotes, com commit por lote e lock timeout de 5 s, e registra tudo em CTL_CARGA. Se não bater, rejeita e a produção não muda." },
+];
+const GERAL = { fase: "Visão geral", tit: "A jornada completa",
+  desc: "O dado nasce no Db2, atravessa a rede privada por três caminhos, passa pelas camadas Bronze, Silver e Gold e volta ao on-premises pelo reverse ETL." };
+
+const svg = document.getElementById("arq");
+const els = [...svg.querySelectorAll("[data-s]")];
+const pNum = document.getElementById("pNum"), pFase = document.getElementById("pFase");
+const pTit = document.getElementById("pTit"), pDesc = document.getElementById("pDesc");
+const bAnt = document.getElementById("bAnt"), bProx = document.getElementById("bProx");
+const roteiro = document.getElementById("roteiro");
+let atual = 0;
+
+// Monta o roteiro agrupado por fase
+const fases = [];
+PASSOS.forEach((p, i) => {
+  let f = fases.find(x => x.nome === p.fase);
+  if (!f) { f = { nome: p.fase, itens: [] }; fases.push(f); }
+  f.itens.push(i + 1);
+});
+fases.forEach(f => {
+  const card = document.createElement("div");
+  card.className = "fase-card";
+  card.innerHTML = `<h3>${f.nome}</h3><ol>${f.itens.map(n =>
+    `<li><button type="button" id="passo-${n}" data-n="${n}"><span class="k">${n}</span><span>${PASSOS[n-1].tit}</span></button></li>`).join("")}</ol>`;
+  roteiro.appendChild(card);
+});
+roteiro.addEventListener("click", e => { const b = e.target.closest("button[data-n]"); if (b) mostra(+b.dataset.n); });
+
+function mostra(n) {
+  atual = Math.max(0, Math.min(PASSOS.length, n));
+  const p = atual ? PASSOS[atual - 1] : GERAL;
+  svg.classList.toggle("focus", atual > 0);
+  els.forEach(el => el.classList.toggle("on", el.dataset.s.split(" ").includes(String(atual))));
+  pNum.textContent = atual || "·";
+  pFase.textContent = atual ? `Passo ${atual} de ${PASSOS.length} · ${p.fase}` : p.fase;
+  pTit.textContent = p.tit;
+  pDesc.textContent = p.desc;
+  bAnt.disabled = atual === 0;
+  bProx.textContent = atual === PASSOS.length ? "Recomeçar ↺" : "Próximo ▶";
+  roteiro.querySelectorAll("button[data-n]").forEach(b =>
+    +b.dataset.n === atual ? b.setAttribute("aria-current", "step") : b.removeAttribute("aria-current"));
+}
+bProx.addEventListener("click", () => mostra(atual === PASSOS.length ? 1 : atual + 1));
+bAnt.addEventListener("click", () => mostra(atual - 1));
+document.getElementById("bTudo").addEventListener("click", () => mostra(0));
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") mostra(atual === PASSOS.length ? 1 : atual + 1);
+  if (e.key === "ArrowLeft") mostra(atual - 1);
+  if (e.key === "Escape") mostra(0);
+});
+mostra(0);
+</script>
+<script>addEventListener("load",()=>{document.fonts.ready.then(()=>mostra(+location.hash.slice(1)||0))});</script>

@@ -1,0 +1,15 @@
+#cloud-config
+# Prepara o servidor "on-prem": Docker + diretórios de dados. A pilha (Db2, Kafka, Debezium)
+# é copiada para /opt/onprem e iniciada com docker compose — ver onprem/README.md.
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - jq
+
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker azureuser
+  - mkdir -p /opt/onprem /dados/batch
+  - chown -R azureuser:azureuser /opt/onprem /dados
+  - systemctl enable --now docker

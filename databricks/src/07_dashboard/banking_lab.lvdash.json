@@ -1,0 +1,1722 @@
+{
+  "datasets": [
+    {
+      "name": "ds_cliente",
+      "displayName": "Clientes e limite pré-aprovado",
+      "queryLines": [
+        "SELECT l.id_cliente, l.vl_limite, l.ds_faixa_risco, p.ds_regiao, p.vl_saldo_devedor, p.vl_saldo_contas ",
+        "FROM limite_pre_aprovado l ",
+        "JOIN posicao_cliente p ON l.id_cliente = p.id_cliente "
+      ]
+    },
+    {
+      "name": "ds_agencia",
+      "displayName": "Resumo por agência",
+      "queryLines": [
+        "SELECT nm_agencia, concat(nm_cidade, ' / ', sg_uf) AS ds_local, ds_regiao, qt_clientes, vl_saldo_total, ",
+        "vl_carteira_credito, qt_contratos_inadimplentes, pc_inadimplencia / 100 AS pc_inadimplencia ",
+        "FROM resumo_agencia ",
+        "ORDER BY vl_carteira_credito DESC "
+      ]
+    },
+    {
+      "name": "ds_cdc",
+      "displayName": "Eventos CDC recebidos do Kafka",
+      "queryLines": [
+        "SELECT timestamp_seconds(floor(unix_seconds(dt_kafka) / 300) * 300) AS dt_janela, ",
+        "initcap(regexp_extract(ds_topico, '[^.]+$', 0)) AS nm_tabela, COUNT(*) AS qt_eventos ",
+        "FROM bronze.cdc_eventos_core ",
+        "GROUP BY 1, 2 ",
+        "ORDER BY 1 "
+      ]
+    },
+    {
+      "name": "ds_recon",
+      "displayName": "Reconciliação do legado",
+      "queryLines": [
+        "SELECT dt_execucao, ds_metrica, vl_origem, vl_lakehouse, vl_diferenca, ",
+        "CASE WHEN fl_ok THEN 'OK' ELSE 'DIVERGENTE' END AS ds_status, ",
+        "CASE WHEN id_execucao = (SELECT max_by(id_execucao, dt_execucao) FROM ops.reconciliacao) AND NOT fl_ok THEN 1 ELSE 0 END AS qt_div_ultima ",
+        "FROM ops.reconciliacao ",
+        "ORDER BY dt_execucao DESC "
+      ]
+    },
+    {
+      "name": "ds_reverse",
+      "displayName": "Execuções do reverse ETL",
+      "queryLines": [
+        "SELECT id_lote, st_execucao, nr_versao_origem, qt_linhas, vl_soma, coalesce(qt_linhas_aplicadas, 0) AS qt_linhas_aplicadas, ",
+        "ds_mensagem, dt_inicio, dt_fim, ",
+        "CASE WHEN st_execucao = 'APLICADO' THEN coalesce(qt_linhas_aplicadas, 0) ELSE 0 END AS qt_devolvidas ",
+        "FROM ops.reverse_etl_execucoes ",
+        "ORDER BY dt_inicio DESC "
+      ]
+    },
+    {
+      "name": "ds_custo",
+      "displayName": "Custo diário do Azure",
+      "queryLines": [
+        "SELECT dt_uso, ds_camada, ds_categoria_medidor, nm_recurso, ",
+        "coalesce(nullif(ds_carga, ''), '(sem tag: compartilhado)') AS ds_carga, ",
+        "vl_custo ",
+        "FROM finops.custo_azure_diario "
+      ]
+    },
+    {
+      "name": "ds_custo_recurso",
+      "displayName": "Custo por recurso",
+      "queryLines": [
+        "SELECT nm_recurso, nm_resource_group, ds_categoria_medidor, ds_camada, ",
+        "coalesce(nullif(ds_carga, ''), '(sem tag: compartilhado)') AS ds_carga, ",
+        "COUNT(DISTINCT dt_uso) AS qt_dias, SUM(vl_custo) AS vl_custo, ",
+        "SUM(vl_custo) / COUNT(DISTINCT dt_uso) AS vl_custo_medio_dia ",
+        "FROM finops.custo_azure_diario ",
+        "GROUP BY ALL ",
+        "ORDER BY vl_custo DESC "
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "credito",
+      "displayName": "Crédito",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "titulo_credito",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Crédito pré-aprovado e carteira"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "subtitulo_credito",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Camada Gold do Lakehouse. O mesmo limite é devolvido ao sistema de crédito on-premises pelo reverse ETL."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "filtro_regiao",
+            "queries": [
+              {
+                "name": "f_cliente_regiao",
+                "query": {
+                  "datasetName": "ds_cliente",
+                  "fields": [
+                    {
+                      "name": "ds_regiao",
+                      "expression": "`ds_regiao`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "f_agencia_regiao",
+                "query": {
+                  "datasetName": "ds_agencia",
+                  "fields": [
+                    {
+                      "name": "ds_regiao",
+                      "expression": "`ds_regiao`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "ds_regiao",
+                    "displayName": "Região",
+                    "queryName": "f_cliente_regiao"
+                  },
+                  {
+                    "fieldName": "ds_regiao",
+                    "displayName": "Região",
+                    "queryName": "f_agencia_regiao"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Região"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "nota_governanca",
+            "multilineTextboxSpec": {
+              "lines": [
+                "🔒 **Governança no Unity Catalog:** cada usuário vê só as regiões liberadas para o seu grupo (row filter), e CPF, nome, e-mail e telefone ficam mascarados para quem não está no grupo de PII."
+              ]
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 8,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_clientes",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_cliente",
+                  "fields": [
+                    {
+                      "name": "count(id_cliente)",
+                      "expression": "COUNT(`id_cliente`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "count(id_cliente)",
+                  "displayName": "Clientes"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Clientes",
+                "showDescription": true,
+                "description": "Com limite calculado"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_limite",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_cliente",
+                  "fields": [
+                    {
+                      "name": "sum(vl_limite)",
+                      "expression": "SUM(`vl_limite`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(vl_limite)",
+                  "displayName": "Limite pré-aprovado",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Limite pré-aprovado",
+                "showDescription": true,
+                "description": "Soma enviada ao Db2"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 4,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_carteira",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_agencia",
+                  "fields": [
+                    {
+                      "name": "sum(vl_carteira_credito)",
+                      "expression": "SUM(`vl_carteira_credito`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(vl_carteira_credito)",
+                  "displayName": "Carteira de crédito",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Carteira de crédito",
+                "showDescription": true,
+                "description": "Saldo devedor dos contratos do legado"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 4,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "limite_por_faixa",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_cliente",
+                  "fields": [
+                    {
+                      "name": "ds_faixa_risco",
+                      "expression": "`ds_faixa_risco`"
+                    },
+                    {
+                      "name": "count(id_cliente)",
+                      "expression": "COUNT(`id_cliente`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "ds_faixa_risco",
+                  "displayName": "Faixa de risco",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "BAIXO",
+                        "MEDIO",
+                        "ALTO"
+                      ]
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "count(id_cliente)",
+                  "displayName": "Clientes",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "ds_faixa_risco",
+                  "displayName": "Faixa de risco",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "BAIXO",
+                        "color": "#2A9D8F"
+                      },
+                      {
+                        "value": "MEDIO",
+                        "color": "#E9A23B"
+                      },
+                      {
+                        "value": "ALTO",
+                        "color": "#E4572E"
+                      }
+                    ]
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Clientes por faixa de risco",
+                "showDescription": true,
+                "description": "Risco ALTO recebe limite zero"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "carteira_por_regiao",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_agencia",
+                  "fields": [
+                    {
+                      "name": "ds_regiao",
+                      "expression": "`ds_regiao`"
+                    },
+                    {
+                      "name": "sum(vl_carteira_credito)",
+                      "expression": "SUM(`vl_carteira_credito`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "ds_regiao",
+                  "displayName": "Região",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "value"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(vl_carteira_credito)",
+                  "displayName": "Carteira de crédito",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Carteira de crédito por região"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 7,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "tabela_agencias",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_agencia",
+                  "fields": [
+                    {
+                      "name": "nm_agencia",
+                      "expression": "`nm_agencia`"
+                    },
+                    {
+                      "name": "ds_local",
+                      "expression": "`ds_local`"
+                    },
+                    {
+                      "name": "ds_regiao",
+                      "expression": "`ds_regiao`"
+                    },
+                    {
+                      "name": "qt_clientes",
+                      "expression": "`qt_clientes`"
+                    },
+                    {
+                      "name": "vl_saldo_total",
+                      "expression": "`vl_saldo_total`"
+                    },
+                    {
+                      "name": "vl_carteira_credito",
+                      "expression": "`vl_carteira_credito`"
+                    },
+                    {
+                      "name": "qt_contratos_inadimplentes",
+                      "expression": "`qt_contratos_inadimplentes`"
+                    },
+                    {
+                      "name": "pc_inadimplencia",
+                      "expression": "`pc_inadimplencia`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "nm_agencia",
+                    "displayName": "Agência"
+                  },
+                  {
+                    "fieldName": "ds_local",
+                    "displayName": "Cidade"
+                  },
+                  {
+                    "fieldName": "ds_regiao",
+                    "displayName": "Região"
+                  },
+                  {
+                    "fieldName": "qt_clientes",
+                    "displayName": "Clientes"
+                  },
+                  {
+                    "fieldName": "vl_saldo_total",
+                    "displayName": "Saldo em conta",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "BRL",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      }
+                    }
+                  },
+                  {
+                    "fieldName": "vl_carteira_credito",
+                    "displayName": "Carteira de crédito",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "BRL",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      }
+                    }
+                  },
+                  {
+                    "fieldName": "qt_contratos_inadimplentes",
+                    "displayName": "Contratos inadimplentes"
+                  },
+                  {
+                    "fieldName": "pc_inadimplencia",
+                    "displayName": "Inadimplência",
+                    "format": {
+                      "type": "number-percent",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Agências",
+                "showDescription": true,
+                "description": "Ordenadas pela carteira de crédito"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 12,
+            "height": 7
+          }
+        }
+      ]
+    },
+    {
+      "name": "operacao",
+      "displayName": "Operação do pipeline",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "titulo_operacao",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Operação do pipeline"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "subtitulo_operacao",
+            "multilineTextboxSpec": {
+              "lines": [
+                "CDC chegando do Kafka, reconciliação do legado sem CDC e auditoria da devolução ao Db2 on-premises."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_eventos_cdc",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_cdc",
+                  "fields": [
+                    {
+                      "name": "sum(qt_eventos)",
+                      "expression": "SUM(`qt_eventos`)"
+                    },
+                    {
+                      "name": "dt_janela",
+                      "expression": "`dt_janela`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(qt_eventos)",
+                  "displayName": "Eventos CDC",
+                  "format": {
+                    "type": "number",
+                    "abbreviation": "compact"
+                  }
+                },
+                "period": {
+                  "fieldName": "dt_janela"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Eventos CDC na Bronze",
+                "showDescription": true,
+                "description": "Mudanças capturadas no Db2 via Debezium e Kafka"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_divergencias",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_recon",
+                  "fields": [
+                    {
+                      "name": "sum(qt_div_ultima)",
+                      "expression": "SUM(`qt_div_ultima`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(qt_div_ultima)",
+                  "displayName": "Divergências"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Divergências na última reconciliação",
+                "showDescription": true,
+                "description": "Zero libera a publicação da Gold"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_devolvidas",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reverse",
+                  "fields": [
+                    {
+                      "name": "sum(qt_devolvidas)",
+                      "expression": "SUM(`qt_devolvidas`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(qt_devolvidas)",
+                  "displayName": "Linhas aplicadas"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Linhas aplicadas no Db2",
+                "showDescription": true,
+                "description": "Reverse ETL: lotes com status APLICADO"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "eventos_cdc_tempo",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_cdc",
+                  "fields": [
+                    {
+                      "name": "dt_janela",
+                      "expression": "`dt_janela`"
+                    },
+                    {
+                      "name": "nm_tabela",
+                      "expression": "`nm_tabela`"
+                    },
+                    {
+                      "name": "sum(qt_eventos)",
+                      "expression": "SUM(`qt_eventos`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "dt_janela",
+                  "displayName": "Janela de 5 minutos",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(qt_eventos)",
+                  "displayName": "Eventos",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "nm_tabela",
+                  "displayName": "Tabela",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Eventos CDC por tabela",
+                "showDescription": true,
+                "description": "Uma linha reta em zero indica consumidor parado: o log se acumula no Db2"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "tabela_reverse_etl",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reverse",
+                  "fields": [
+                    {
+                      "name": "dt_inicio",
+                      "expression": "`dt_inicio`"
+                    },
+                    {
+                      "name": "id_lote",
+                      "expression": "`id_lote`"
+                    },
+                    {
+                      "name": "st_execucao",
+                      "expression": "`st_execucao`"
+                    },
+                    {
+                      "name": "nr_versao_origem",
+                      "expression": "`nr_versao_origem`"
+                    },
+                    {
+                      "name": "qt_linhas",
+                      "expression": "`qt_linhas`"
+                    },
+                    {
+                      "name": "qt_linhas_aplicadas",
+                      "expression": "`qt_linhas_aplicadas`"
+                    },
+                    {
+                      "name": "vl_soma",
+                      "expression": "`vl_soma`"
+                    },
+                    {
+                      "name": "ds_mensagem",
+                      "expression": "`ds_mensagem`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "dt_inicio",
+                    "displayName": "Início"
+                  },
+                  {
+                    "fieldName": "id_lote",
+                    "displayName": "Lote"
+                  },
+                  {
+                    "fieldName": "st_execucao",
+                    "displayName": "Status"
+                  },
+                  {
+                    "fieldName": "nr_versao_origem",
+                    "displayName": "Versão da Gold"
+                  },
+                  {
+                    "fieldName": "qt_linhas",
+                    "displayName": "Linhas enviadas"
+                  },
+                  {
+                    "fieldName": "qt_linhas_aplicadas",
+                    "displayName": "Linhas aplicadas"
+                  },
+                  {
+                    "fieldName": "vl_soma",
+                    "displayName": "Soma do lote",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "BRL",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      }
+                    }
+                  },
+                  {
+                    "fieldName": "ds_mensagem",
+                    "displayName": "Mensagem"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Reverse ETL: auditoria das execuções",
+                "showDescription": true,
+                "description": "Tabela ops.reverse_etl_execucoes; o lado on-prem fica em CREDITO.CTL_CARGA"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "tabela_reconciliacao",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_recon",
+                  "fields": [
+                    {
+                      "name": "dt_execucao",
+                      "expression": "`dt_execucao`"
+                    },
+                    {
+                      "name": "ds_metrica",
+                      "expression": "`ds_metrica`"
+                    },
+                    {
+                      "name": "vl_origem",
+                      "expression": "`vl_origem`"
+                    },
+                    {
+                      "name": "vl_lakehouse",
+                      "expression": "`vl_lakehouse`"
+                    },
+                    {
+                      "name": "vl_diferenca",
+                      "expression": "`vl_diferenca`"
+                    },
+                    {
+                      "name": "ds_status",
+                      "expression": "`ds_status`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "dt_execucao",
+                    "displayName": "Execução"
+                  },
+                  {
+                    "fieldName": "ds_metrica",
+                    "displayName": "Métrica"
+                  },
+                  {
+                    "fieldName": "vl_origem",
+                    "displayName": "Db2 (origem)"
+                  },
+                  {
+                    "fieldName": "vl_lakehouse",
+                    "displayName": "Lakehouse (Silver)"
+                  },
+                  {
+                    "fieldName": "vl_diferenca",
+                    "displayName": "Diferença"
+                  },
+                  {
+                    "fieldName": "ds_status",
+                    "displayName": "Status"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Reconciliação do legado (LEGADO.CONTRATOS_CREDITO)",
+                "showDescription": true,
+                "description": "Contagem e somas comparadas a cada execução"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "finops",
+      "displayName": "Custos (FinOps)",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "titulo_finops",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Custos do projeto (FinOps)"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "subtitulo_finops",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Fatura real do Azure em BRL, lida da Cost Management API: VM on-prem, VMs dos clusters, DBUs e a rede do workspace."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "filtro_periodo",
+            "queries": [
+              {
+                "name": "f_custo_dt",
+                "query": {
+                  "datasetName": "ds_custo",
+                  "fields": [
+                    {
+                      "name": "dt_uso",
+                      "expression": "`dt_uso`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "dt_uso",
+                    "displayName": "Período",
+                    "queryName": "f_custo_dt"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Período"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "nota_finops",
+            "multilineTextboxSpec": {
+              "lines": [
+                "💡 **Como ler:** as tags projeto e carga (Terraform e jobs) dividem o custo por carga. Sem tag fica a infraestrutura compartilhada do workspace, como o NAT gateway, que cobra mesmo sem nenhum cluster ligado. O Azure fatura com 8 a 24 h de atraso."
+              ]
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 8,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_custo_total",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_custo",
+                  "fields": [
+                    {
+                      "name": "sum(vl_custo)",
+                      "expression": "SUM(`vl_custo`)"
+                    },
+                    {
+                      "name": "daily(dt_uso)",
+                      "expression": "DATE_TRUNC(\"DAY\", `dt_uso`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(vl_custo)",
+                  "displayName": "Custo total",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                },
+                "period": {
+                  "fieldName": "daily(dt_uso)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Custo total",
+                "showDescription": true,
+                "description": "Tudo do projeto no período"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_custo_onprem",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_custo",
+                  "fields": [
+                    {
+                      "name": "sum(vl_custo)",
+                      "expression": "SUM(`vl_custo`)"
+                    },
+                    {
+                      "name": "daily(dt_uso)",
+                      "expression": "DATE_TRUNC(\"DAY\", `dt_uso`)"
+                    }
+                  ],
+                  "disaggregated": false,
+                  "filters": [
+                    {
+                      "expression": "`ds_camada` = 'On-prem simulado'"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(vl_custo)",
+                  "displayName": "On-prem simulado",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                },
+                "period": {
+                  "fieldName": "daily(dt_uso)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "On-prem simulado",
+                "showDescription": true,
+                "description": "VM, disco, IP e rede do servidor Db2/Kafka"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 4,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_custo_compartilhado",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_custo",
+                  "fields": [
+                    {
+                      "name": "sum(vl_custo)",
+                      "expression": "SUM(`vl_custo`)"
+                    },
+                    {
+                      "name": "daily(dt_uso)",
+                      "expression": "DATE_TRUNC(\"DAY\", `dt_uso`)"
+                    }
+                  ],
+                  "disaggregated": false,
+                  "filters": [
+                    {
+                      "expression": "`ds_camada` = 'Databricks · infraestrutura compartilhada'"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(vl_custo)",
+                  "displayName": "Infraestrutura compartilhada",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                },
+                "period": {
+                  "fieldName": "daily(dt_uso)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Infraestrutura compartilhada",
+                "showDescription": true,
+                "description": "NAT, IP e storage do workspace: custo fixo"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 4,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "custo_diario_camada",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_custo",
+                  "fields": [
+                    {
+                      "name": "daily(dt_uso)",
+                      "expression": "DATE_TRUNC(\"DAY\", `dt_uso`)"
+                    },
+                    {
+                      "name": "ds_camada",
+                      "expression": "`ds_camada`"
+                    },
+                    {
+                      "name": "sum(vl_custo)",
+                      "expression": "SUM(`vl_custo`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "daily(dt_uso)",
+                  "displayName": "Dia",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(vl_custo)",
+                  "displayName": "Custo",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                },
+                "color": {
+                  "fieldName": "ds_camada",
+                  "displayName": "Camada",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "On-prem simulado",
+                        "color": "#8E5BB5"
+                      },
+                      {
+                        "value": "Databricks · DBUs",
+                        "color": "#1F5F99"
+                      },
+                      {
+                        "value": "Databricks · VMs dos clusters",
+                        "color": "#5DA9E9"
+                      },
+                      {
+                        "value": "Databricks · infraestrutura compartilhada",
+                        "color": "#E9A23B"
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Custo diário por camada",
+                "showDescription": true,
+                "description": "A faixa âmbar constante é o custo que existe mesmo sem uso"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "custo_por_carga",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_custo",
+                  "fields": [
+                    {
+                      "name": "ds_carga",
+                      "expression": "`ds_carga`"
+                    },
+                    {
+                      "name": "sum(vl_custo)",
+                      "expression": "SUM(`vl_custo`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(vl_custo)",
+                  "displayName": "Custo",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "ds_carga",
+                  "displayName": "Carga",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "value"
+                    }
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Custo por carga",
+                "showDescription": true,
+                "description": "Tag carga dos jobs e do pipeline"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 13,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "custo_por_medidor",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_custo",
+                  "fields": [
+                    {
+                      "name": "ds_categoria_medidor",
+                      "expression": "`ds_categoria_medidor`"
+                    },
+                    {
+                      "name": "sum(vl_custo)",
+                      "expression": "SUM(`vl_custo`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(vl_custo)",
+                  "displayName": "Custo",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "ds_categoria_medidor",
+                  "displayName": "Tipo de recurso",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "value"
+                    }
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Custo por tipo de recurso",
+                "showDescription": true,
+                "description": "Categoria do medidor no Azure"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 13,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "tabela_recursos",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_custo_recurso",
+                  "fields": [
+                    {
+                      "name": "nm_recurso",
+                      "expression": "`nm_recurso`"
+                    },
+                    {
+                      "name": "nm_resource_group",
+                      "expression": "`nm_resource_group`"
+                    },
+                    {
+                      "name": "ds_categoria_medidor",
+                      "expression": "`ds_categoria_medidor`"
+                    },
+                    {
+                      "name": "ds_camada",
+                      "expression": "`ds_camada`"
+                    },
+                    {
+                      "name": "ds_carga",
+                      "expression": "`ds_carga`"
+                    },
+                    {
+                      "name": "qt_dias",
+                      "expression": "`qt_dias`"
+                    },
+                    {
+                      "name": "vl_custo",
+                      "expression": "`vl_custo`"
+                    },
+                    {
+                      "name": "vl_custo_medio_dia",
+                      "expression": "`vl_custo_medio_dia`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "nm_recurso",
+                    "displayName": "Recurso"
+                  },
+                  {
+                    "fieldName": "nm_resource_group",
+                    "displayName": "Resource group"
+                  },
+                  {
+                    "fieldName": "ds_categoria_medidor",
+                    "displayName": "Tipo"
+                  },
+                  {
+                    "fieldName": "ds_camada",
+                    "displayName": "Camada"
+                  },
+                  {
+                    "fieldName": "ds_carga",
+                    "displayName": "Carga"
+                  },
+                  {
+                    "fieldName": "qt_dias",
+                    "displayName": "Dias com custo"
+                  },
+                  {
+                    "fieldName": "vl_custo",
+                    "displayName": "Custo total",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "BRL",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      }
+                    }
+                  },
+                  {
+                    "fieldName": "vl_custo_medio_dia",
+                    "displayName": "Média por dia",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "BRL",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Recursos que geram custo",
+                "showDescription": true,
+                "description": "Do mais caro para o mais barato"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {
+        "light": "#F5F7FA",
+        "dark": "#121821"
+      },
+      "widgetBackgroundColor": {
+        "light": "#FFFFFF",
+        "dark": "#1A222D"
+      },
+      "widgetBorderColor": {
+        "light": "#FFFFFF",
+        "dark": "#1A222D"
+      },
+      "fontColor": {
+        "light": "#15202E",
+        "dark": "#E6EBF1"
+      },
+      "selectionColor": {
+        "light": "#2272B4",
+        "dark": "#8ACAFF"
+      },
+      "visualizationColors": [
+        "#1F5F99",
+        "#2A9D8F",
+        "#E9A23B",
+        "#8E5BB5",
+        "#E4572E",
+        "#5DA9E9",
+        "#9BC53D"
+      ],
+      "widgetHeaderAlignment": "LEFT",
+      "widgetCornerRadius": 10
+    }
+  }
+}

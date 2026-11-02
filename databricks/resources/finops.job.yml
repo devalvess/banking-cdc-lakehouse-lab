@@ -1,0 +1,27 @@
+resources:
+  jobs:
+    finops:
+      name: finops_custos
+      description: >
+        Lê o custo real do projeto na Cost Management API do Azure e atualiza a visão de consumo
+        do Databricks (system.billing). Alimenta o dashboard de FinOps.
+      max_concurrent_runs: 1
+      tags:
+        projeto: banking-cdc-lakehouse-lab
+        carga: finops_custos
+      parameters:
+        - name: catalogo
+          default: ${var.catalogo}
+      # O Azure fecha o custo do dia anterior durante a madrugada.
+      schedule:
+        quartz_cron_expression: "0 0 8 * * ?"
+        timezone_id: America/Sao_Paulo
+      # Serverless: só chama uma API pública do Azure, não precisa da rede on-prem.
+      tasks:
+        - task_key: finops_setup
+          notebook_task:
+            notebook_path: ../src/08_finops/finops_setup.sql
+        - task_key: custos_azure
+          depends_on: [{ task_key: finops_setup }]
+          notebook_task:
+            notebook_path: ../src/08_finops/ingestao_custos_azure.py

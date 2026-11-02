@@ -1,0 +1,19 @@
+# Terraform
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/*.tfplan
+infra/terraform/terraform.tfvars
+infra/terraform/.terraform.lock.hcl
+
+# Segredos do ambiente on-prem simulado
+onprem/.env
+onprem/secrets/
+
+# Databricks bundle
+databricks/.databricks/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
