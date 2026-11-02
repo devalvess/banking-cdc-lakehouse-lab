@@ -42,7 +42,7 @@ ExpressRoute). Os dados são **100% sintéticos**, gerados por um simulador de m
 ![A jornada do dado em 11 passos: do Db2 on-premises ao Lakehouse e de volta](docs/img/arquitetura.gif)
 
 Versão interativa, com botão **Próximo** e a explicação de cada passo:
-[docs/arquitetura.html](docs/arquitetura.html) (baixe e abra no navegador).
+[abrir o diagrama da arquitetura](https://devalvess.github.io/banking-cdc-lakehouse-lab/arquitetura.html).
 
 <details>
 <summary>Mesmo fluxo em diagrama de texto (Mermaid)</summary>
@@ -89,7 +89,7 @@ flowchart LR
 O NSG do servidor on-prem só aceita as portas de dados (Db2 50000, Kafka 9092, SFTP 2222)
 vindas da VNet do Databricks (`10.139.0.0/16`), e SSH só do IP do administrador. Nada de dados
 passa pela internet. Versão interativa, com os comandos para conferir cada peça no Azure:
-[docs/rede.html](docs/rede.html).
+[abrir o diagrama da rede](https://devalvess.github.io/banking-cdc-lakehouse-lab/rede.html).
 
 **Compute híbrido:** tarefas que conversam com o on-prem rodam em **cluster clássico** (está na
 VNet com peering); a Gold, que só lê o Lakehouse, roda em **serverless**. Detalhes em
@@ -453,8 +453,8 @@ Decisões:
   `LIMITE_v1_falha` foi `REJEITADO` (554 linhas esperadas, 548 recebidas) e a produção não
   mudou; os lotes `LIMITE_v1` e `LIMITE_v2` foram `APLICADO`.
 
-Os diagramas interativos da [arquitetura](docs/arquitetura.html) (11 passos) e da
-[rede](docs/rede.html) (9 cenas) estão em `docs/`. Abra no navegador.
+Os diagramas interativos da [arquitetura](https://devalvess.github.io/banking-cdc-lakehouse-lab/arquitetura.html) (11 passos) e da
+[rede](https://devalvess.github.io/banking-cdc-lakehouse-lab/rede.html) (9 cenas) abrem direto no navegador.
 
 ---
 
