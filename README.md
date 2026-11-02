@@ -582,8 +582,8 @@ ssh azureuser@<IP_ADMIN> "bash /opt/onprem/connect/registrar_conector.sh"
 # 3. Credenciais do on-prem no Databricks
 .\databricks\scripts\criar_secrets.ps1 -Profile <profile> -VmIp <IP_ADMIN>
 
-# 4. Databricks — o catálogo usa uma external location do seu ambiente
-databricks experimental aitools tools query "CREATE CATALOG IF NOT EXISTS banking_lab MANAGED LOCATION 'abfss://<container>@<storage>.dfs.core.windows.net/<caminho>/banking_lab'" --profile <profile>
+# 4. Databricks — antes, no SQL Editor do workspace, crie o catálogo numa external location
+#    do seu ambiente (comando abaixo do bloco)
 cd databricks
 databricks bundle deploy -t dev --profile <profile>   # também publica o dashboard
 databricks bundle run setup_lab -t dev --profile <profile>
@@ -592,6 +592,13 @@ databricks bundle run carga_diaria -t dev --profile <profile>
 # 5. Custos (FinOps): coleta com a sua identidade do az login e carrega no Lakehouse
 cd ..
 .\databricks\scripts\coletar_custos_azure.ps1 -Profile <profile> -RodarJob
+```
+
+SQL do passo 4, para rodar no **SQL Editor** do workspace antes do `bundle deploy`:
+
+```sql
+CREATE CATALOG IF NOT EXISTS banking_lab
+  MANAGED LOCATION 'abfss://<container>@<storage>.dfs.core.windows.net/<caminho>/banking_lab';
 ```
 
 **Custo:** a VM (~US$ 0,30/h) desliga sozinha às 23h. Para remover tudo:
