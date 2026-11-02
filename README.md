@@ -19,10 +19,10 @@ ExpressRoute). Os dados são **100% sintéticos**, gerados por um simulador de m
 
 ## Em 1 minuto
 
-- **CDC por log, não por consulta:** o Debezium lê o log do Db2 e publica no Kafka; o pipeline
-  Lakeflow aplica as mudanças com `AUTO CDC` (SCD2 em clientes). Com o conector parado, o Kafka
-  segura a fila e o log se acumula **no Db2** — por isso o README trata retenção e monitoramento
-  na origem.
+- **CDC por log, não por consulta:** o ASN Capture lê o log do Db2 e grava as mudanças em
+  tabelas CD; o Debezium publica essas mudanças no Kafka e o pipeline Lakeflow aplica com
+  `AUTO CDC` (SCD2 em clientes). Com o Debezium parado, as mudanças se acumulam **dentro do
+  Db2**: o Kafka só protege a origem quando quem para é o consumidor depois dele.
 - **Reverse ETL sem tocar direto na produção:** o Databricks grava numa staging; uma procedure no
   Db2 valida contagem e soma e aplica em faixas, com lock timeout de 5 s. No teste de falha,
   **554 linhas esperadas, 548 recebidas: lote rejeitado e produção intocada**, com tudo
@@ -48,6 +48,7 @@ ExpressRoute). Os dados são **100% sintéticos**, gerados por um simulador de m
 - [Dashboard: crédito e operação do pipeline](#dashboard-crédito-e-operação-do-pipeline)
 - [FinOps: custo real do projeto](#finops-custo-real-do-projeto)
 - [Serverless: conectividade privada e custo](#serverless-conectividade-privada-e-custo)
+- [E o Azure Data Factory?](#e-o-azure-data-factory)
 - [Estrutura do repositório](#estrutura-do-repositório)
 - [Como executar](#como-executar)
 
@@ -177,7 +178,7 @@ Tabelas Gold:
 |---|---|---|
 | Captura deletes | ✅ Sim, o delete está no log | ❌ Não — a linha simplesmente some |
 | Captura todos os estados intermediários | ✅ Cada update vira um evento | ❌ Só o estado no momento da consulta |
-| Depende de coluna de auditoria confiável | ❌ Não | ✅ Sim — e no legado ela frequentemente não é atualizada por todas as rotinas |
+| Depende de coluna de auditoria confiável | Não depende | Depende — e no legado ela frequentemente não é atualizada por todas as rotinas |
 | Carga no banco de origem | Leitura sequencial do log | Varredura de índice/tabela a cada execução, competindo com o OLTP |
 | Latência | Segundos | Intervalo do agendamento |
 | Ordem das operações | Garantida (LSN/SCN) | Não garantida |
@@ -544,6 +545,16 @@ clássicas para serverless é só configurar NCC + Private Link, sem mudar códi
 - SQL Warehouse com *auto stop* curto.
 - Painel de custo com a fatura real do Azure, dividida por tags: ver
   [FinOps: custo real do projeto](#finops-custo-real-do-projeto).
+
+---
+
+## E o Azure Data Factory?
+
+O ADF pode continuar orquestrando durante a migração, inclusive cargas batch do Db2 pelo
+self-hosted integration runtime. Dois pontos deste laboratório, porém, ele não cobre sozinho:
+o **CDC por log**, porque com o conector Db2 do ADF a carga incremental é por consulta, com as
+limitações mostradas no Cenário 3; e a **volta de dados para o Db2**, porque o conector Db2 do
+ADF funciona apenas como origem na atividade de cópia.
 
 ---
 
