@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Banking CDC Lakehouse Lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Página inicial do GitHub Pages: leva aos dois diagramas interativos e ao repositório */
+:root { --bg: #f4f6fa; --card: #fff; --txt: #1b1f24; --sub: #57606a; --borda: #d8dee4; --link: #1f5fbf; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #0f1419; --card: #171d24; --txt: #e6edf3; --sub: #9aa4ae; --borda: #2d3640; --link: #6ea8fe; }
+}
+:root[data-theme="dark"] { --bg: #0f1419; --card: #171d24; --txt: #e6edf3; --sub: #9aa4ae; --borda: #2d3640; --link: #6ea8fe; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--txt); font: 16px/1.55 "IBM Plex Sans", system-ui, sans-serif; }
+main { max-width: 1040px; margin: 0 auto; padding: 48px 16px 64px; }
+h1 { font-size: 28px; margin: 0 0 8px; }
+p.sub { color: var(--sub); margin: 0 0 32px; max-width: 760px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+a.card { display: block; background: var(--card); border: 1px solid var(--borda); border-radius: 12px; overflow: hidden;
+         color: inherit; text-decoration: none; transition: border-color .15s, transform .15s; }
+a.card:hover { border-color: var(--link); transform: translateY(-2px); }
+a.card img { display: block; width: 100%; aspect-ratio: 1100 / 791; object-fit: cover; object-position: top; border-bottom: 1px solid var(--borda); }
+a.card div { padding: 16px 18px 18px; }
+a.card h2 { font-size: 18px; margin: 0 0 4px; }
+a.card span { color: var(--sub); font-size: 14px; }
+footer { margin-top: 32px; font-size: 14px; color: var(--sub); }
+footer a { color: var(--link); }
+</style>
+<main>
+  <h1>Banking CDC Lakehouse Lab</h1>
+  <p class="sub">Migração de um banco com sistemas legados on-premises para o Azure Databricks: CDC do Db2 com
+    Debezium e Kafka, reverse ETL de volta ao on-premises, legado sem CDC via JDBC, governança e FinOps.</p>
+  <section class="cards">
+    <a class="card" href="arquitetura.html">
+      <img src="img/arquitetura.gif" alt="Diagrama animado da arquitetura em 11 passos">
+      <div><h2>Arquitetura</h2><span>A jornada do dado em 11 passos, do Db2 ao Lakehouse e de volta</span></div>
+    </a>
+    <a class="card" href="rede.html">
+      <img src="img/rede.gif" alt="Diagrama animado da rede em 9 cenas">
+      <div><h2>Rede</h2><span>VNets, peering, NSG e por que o serverless fica de fora, em 9 cenas</span></div>
+    </a>
+  </section>
+  <footer>Código, decisões e como executar: <a href="https://github.com/devalvess/banking-cdc-lakehouse-lab">repositório no GitHub</a>.</footer>
+</main>
+</html>
