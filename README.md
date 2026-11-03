@@ -183,10 +183,10 @@ Tabelas Gold:
 | Latência | Segundos | Intervalo do agendamento |
 | Ordem das operações | Garantida (LSN/SCN) | Não garantida |
 
-### O problema real: CDC "pesando" no banco de origem
+### CDC e o acúmulo de log no banco de origem
 
-Um relato comum: *"habilitamos CDC e o banco começou a acumular log; aí colocamos Kafka e não
-resolveu"*. **Não resolveu porque o gargalo está antes do Kafka.**
+Colocar Kafka depois do CDC não reduz o log acumulado na origem: **o gargalo está antes do
+Kafka.**
 
 O Kafka é um buffer **depois** que o log foi lido. Quem segura o log no banco é o **leitor do log**
 (o conector de CDC). Enquanto ele não confirma que leu uma posição, o banco **não pode reciclar**
@@ -196,8 +196,6 @@ aquele trecho de log:
 |---|---|---|
 | Db2 (ASN Capture / SQL Replication) | Logs arquivados + tabelas de change data (CD) | O Capture precisa reler o log a partir do último ponto confirmado; as tabelas CD crescem se o *prune* não roda |
 | SQL Server | Transaction log + tabelas `cdc.*` | O log não trunca enquanto o job de captura não processa |
-| PostgreSQL | WAL | O *replication slot* retém o WAL até o consumidor confirmar o LSN |
-| Oracle | Archive logs | LogMiner/XStream precisa deles disponíveis |
 
 Se o conector para, fica lento ou foi configurado para capturar tabelas demais, o log cresce na
 origem — com ou sem Kafka na frente.
@@ -219,7 +217,7 @@ Db2 log ──► ASN Capture ──► tabelas CD (no Db2!) ──► Debezium 
 | Debezium / Kafka | Linhas nas tabelas CD | `prune_interval` + `retention_limit` do Capture calibrados com a janela de indisponibilidade aceita |
 | Databricks | Nada na origem — só o tópico Kafka cresce (retenção de 7 dias) | Monitorar o lag do consumidor |
 
-Essa é a resposta ao *"colocamos Kafka e não resolveu"*: o Kafka protege a origem **só da
+Em resumo: o Kafka protege a origem **só da
 indisponibilidade de quem vem depois dele**. O que vem antes (Capture, tabelas CD, log) continua
 dentro do banco transacional e precisa de monitoramento e limites próprios.
 
@@ -228,11 +226,8 @@ dentro do banco transacional e precisa de monitoramento e limites próprios.
 1. **Capturar só o necessário** — lista explícita de tabelas e, se possível, de colunas.
 2. **Retenção de log dimensionada** — tamanho de log ativo/arquivado calculado para o pior caso de
    indisponibilidade do consumidor (ex.: 24 h de janela) e não "infinito".
-3. **Limite de segurança** — ex.: `max_slot_wal_keep_size` no Postgres; no Db2, política de
-   *prune* das tabelas CD e alerta de espaço de log. É melhor perder o slot e fazer um re-snapshot
-   do que derrubar o core bancário.
-4. **Capturar de uma réplica** quando o banco suporta (Db2 HADR standby, réplica de leitura).
-5. **Monitorar o atraso do consumidor** em dois pontos (abaixo).
+3. **Capturar de uma réplica** quando o banco suporta (Db2 HADR standby, réplica de leitura).
+4. **Monitorar o atraso do consumidor** em dois pontos (abaixo).
 
 ### Monitoramento do consumidor
 
@@ -345,7 +340,7 @@ resultado fica registrado **dos dois lados**: `ops.reverse_etl_execucoes` no Dat
 
 A lógica de staging, validação e auditoria é a mesma nos três; só muda quem inicia a conexão.
 
-**Referências:** [Histórico e time travel do Delta](https://learn.microsoft.com/azure/databricks/tables/history) · [Conexão JDBC no Azure Databricks (leitura e gravação)](https://learn.microsoft.com/azure/databricks/connect/jdbc-connection)
+**Referências:** [Conexão JDBC no Azure Databricks (leitura e gravação)](https://learn.microsoft.com/azure/databricks/connect/jdbc-connection)
 
 ---
 
@@ -445,9 +440,11 @@ claro. Na Gold:
 - **`COMMENT` em toda tabela e coluna**, com unidade, domínio e regra de cálculo
   (ex.: *"Percentual de contratos com mais de 90 dias de atraso sobre o total de contratos
   ativos"*).
-- **Sem PII** em `gold.resumo_agencia`, candidata a tabela principal de um Genie Space; as
-  demais têm máscara e filtro de linha no Unity Catalog, que valem para qualquer ferramenta que
-  consulte com a identidade do usuário.
+- **PII protegida também no Genie**: o Genie consulta com a identidade de quem pergunta, então
+  as máscaras de coluna e os filtros de linha do Unity Catalog valem para ele como para qualquer
+  outra ferramenta. Tabelas com PII, como `gold.dim_cliente`, podem entrar no Genie Space sem
+  expor dado a quem não tem permissão. A `gold.resumo_agencia`, agregada e sem PII, é a
+  candidata natural para começar.
 - **Dados confiáveis**: só publicados após a reconciliação passar.
 
 ---
@@ -472,8 +469,9 @@ Decisões:
 - **Sem credenciais embutidas** (`embed_credentials: false`): cada leitor consulta com as
   próprias permissões, então o filtro de região e as máscaras de PII do Unity Catalog valem
   também no dashboard. A segurança está no dado, não na ferramenta.
-- **O gráfico de eventos CDC é o alarme visual do problema de origem**: uma linha em zero
-  significa consumidor parado, e o log se acumulando no Db2.
+- **O gráfico de eventos CDC é o alarme visual do fluxo**: uma linha em zero enquanto o banco
+  recebe movimento indica que algo parou no caminho. Se foi o Debezium, as mudanças se acumulam
+  nas tabelas CD do Db2; se foi o pipeline, o Kafka segura a fila.
 - **A auditoria aparece com as falhas, não só com os sucessos**: no print acima, o lote
   `LIMITE_v1_falha` foi `REJEITADO` (554 linhas esperadas, 548 recebidas) e a produção não
   mudou; os lotes `LIMITE_v1` e `LIMITE_v2` foram `APLICADO`.
@@ -493,7 +491,7 @@ com dados da **fatura do Azure** (BRL), lidos da Cost Management API.
 | O que entra | Como é identificado |
 |---|---|
 | Servidor on-prem simulado (VM, disco, IP, VNet) | Resource group `rg-onprem-simulado` |
-| DBUs e VMs dos clusters clássicos | Tags `projeto` e `carga`, que o Databricks propaga para a cobrança do Azure |
+| DBUs e VMs dos clusters clássicos | Tags `projeto` e `carga`, que o Databricks propaga para a cobrança do Azure. Dependendo do cenário, as system tables do Databricks (`system.billing.usage`) permitem uma comparação mais detalhada, por job e por cluster |
 | Rede e storage gerenciados do workspace (NAT gateway, IP público, storage) | Resource group gerenciado: **custo compartilhado**, sem tag |
 
 Decisões:
@@ -507,9 +505,6 @@ Decisões:
   definição, custo compartilhado: aparece separado em vez de sumir na média.
 - **Carga idempotente.** O Azure fecha o custo com 8 a 24 h de atraso e reajusta dias recentes;
   cada carga regrava a janela inteira (`replaceWhere`).
-- **Primeiro achado:** o NAT gateway do workspace custa cerca de **R$ 6 por dia mesmo sem nenhum
-  cluster ligado**, porque é a saída de internet dos clusters clássicos (*secure cluster
-  connectivity*). Num workspace parado, ele é a maior linha da fatura.
 
 **Duas formas de coletar** ([ingestao_custos_azure.py](databricks/src/08_finops/ingestao_custos_azure.py)):
 
