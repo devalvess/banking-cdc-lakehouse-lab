@@ -131,7 +131,7 @@ Catálogo `banking_lab` no Unity Catalog, com um schema por responsabilidade:
 |---|---|---|
 | Datacenter + ExpressRoute/VPN | VNet isolada `vnet-onprem` + VNet peering | Só o meio físico; o modelo de rede (privado, portas mínimas) é o mesmo |
 | Servidor Unix com IBM Db2 | VM Ubuntu com **Db2 11.5 Community** em container | Edição e sistema operacional |
-| CDC por log (IIDR / SQL Replication) | **ASN Capture real** + Debezium Db2 connector | Nenhuma: é o mesmo mecanismo |
+| CDC por log (IIDR / SQL Replication) | **ASN Capture real** + Debezium Db2 connector | O mecanismo é o mesmo; em produção, exige licença do IBM InfoSphere Data Replication (IIDR) |
 | Kafka corporativo / Confluent | Kafka 3.9 (KRaft, 1 nó) | Replicação, SASL_SSL e Schema Registry |
 | Sistema legado sem CDC | Schema `LEGADO` no mesmo Db2 | Seria outro servidor/banco |
 | Servidor SFTP do batch noturno | Container `atmoz/sftp` | Nenhuma relevante |
@@ -268,6 +268,8 @@ Código: [databricks/src/02_cdc](databricks/src/02_cdc) — pipeline Lakeflow em
 
 A última linha é o ponto principal: **"conector RUNNING" não significa "dados chegando"**.
 
+**Referências:** [Debezium Db2 connector](https://debezium.io/documentation/reference/connectors/db2.html) · [asncap: Starting Capture — IBM](https://www.ibm.com/docs/en/idr/11.4.0?topic=zos-asncap-starting-capture) · [AUTO CDC — Lakeflow](https://learn.microsoft.com/azure/databricks/ldp/cdc)
+
 ---
 
 ## Cenário 2 — Reverse ETL para o on-premises
@@ -328,7 +330,7 @@ resultado fica registrado **dos dois lados**: `ops.reverse_etl_execucoes` no Dat
 | **Segurança** | Usuário `SVCDBX` só tem `INSERT/DELETE` na staging e `EXECUTE` na procedure — **não tem UPDATE na produção** | Quem altera a produção é a procedure (SQL estático, autoridade do dono). Mínimo privilégio: [05_permissoes.sql](onprem/db2/sql/05_permissoes.sql) |
 | | Credencial em **secret scope** (em produção: Azure Key Vault) | Senha nunca aparece em notebook ou log |
 | | Somente colunas necessárias (chave do cliente, limite, validade) | Minimiza PII trafegando para fora do Lakehouse |
-| **Auditoria** | `batch_id` + **versão Delta da Gold** gravados em `ops.reverse_etl_execucoes` | Com time travel, é possível reproduzir exatamente o que foi enviado em qualquer data |
+| **Auditoria** | `batch_id` + **versão Delta da Gold** gravados em `ops.reverse_etl_execucoes` | Com time travel, é possível reproduzir exatamente o que foi enviado dentro da janela de retenção (7 dias por padrão); para auditoria de longo prazo, aumentar a retenção ou guardar uma cópia de cada lote enviado |
 | | Tabela de controle também no destino (`ctl_carga`) | O time do on-prem audita sem acessar o Databricks |
 | | Contagem, soma e hash comparados antes e depois | Prova de integridade da entrega |
 | **Idempotência** | Lote = versão da Gold. Se já está `APLICADO`, nem o job nem a procedure reaplicam | Re-execução segura após falha; faixas já confirmadas não mudam de novo (hash igual) |
@@ -342,6 +344,8 @@ resultado fica registrado **dos dois lados**: `ops.reverse_etl_execucoes` no Dat
 | **Pull via SQL** | O sistema on-prem consulta um SQL Warehouse (ODBC/JDBC) ou usa Delta Sharing | O consumidor on-prem tem capacidade de integrar e quer controlar o horário |
 
 A lógica de staging, validação e auditoria é a mesma nos três; só muda quem inicia a conexão.
+
+**Referências:** [Histórico e time travel do Delta](https://learn.microsoft.com/azure/databricks/tables/history) · [Conexão JDBC no Azure Databricks (leitura e gravação)](https://learn.microsoft.com/azure/databricks/connect/jdbc-connection)
 
 ---
 
@@ -407,6 +411,8 @@ Esse é também o argumento mais forte a favor do CDC por log.
 nuvem) e o Auto Loader carrega com schema explícito, *rescued data column* para linhas fora do
 layout e o nome do arquivo em cada linha. Arquivo já processado não duplica (checkpoint).
 
+**Referências:** [Conexão JDBC no Azure Databricks](https://learn.microsoft.com/azure/databricks/connect/jdbc-connection) · [Auto Loader](https://learn.microsoft.com/azure/databricks/ingestion/cloud-object-storage/auto-loader/)
+
 ---
 
 ## Governança: PII, grupos e auditoria
@@ -417,12 +423,14 @@ layout e o nome do arquivo em cada linha. Arquivo já processado não duplica (c
 | Mascaramento | **Column masks** em `gold.dim_cliente`: CPF `***.456.789-**`, nome só o primeiro, e-mail `j***@dominio`, telefone só os 4 últimos, nascimento só o ano — exceto para `grp_pii_leitura` |
 | Restrição por linha | **Row filter** por região; o mapa grupo → região é uma tabela (`governanca.acesso_regiao`), não código |
 | Acesso por grupos | Grants só a grupos (`grp_engenharia`, `grp_analistas`, `grp_pii_leitura`), nunca a usuários |
-| Persistência dos controles | Gold criada uma vez com máscaras e comentários; a carga usa `INSERT OVERWRITE`, que **não apaga** máscaras, filtros e grants (`CREATE OR REPLACE` apagaria) |
+| Persistência dos controles | Gold criada uma vez com máscaras e comentários; a carga usa `INSERT OVERWRITE`, que mantém máscaras, filtros e grants |
 | Trilha de auditoria | `system.access.audit` (quem leu a tabela com PII, quem alterou permissão), `system.access.table_lineage`, e as tabelas de auditoria do reverse ETL |
 | Credenciais | Secret scope `onprem`; usuário de banco com privilégio mínimo |
 
 Código: [governanca.sql](databricks/src/05_governanca/governanca.sql) e
 [gold_ddl.sql](databricks/src/04_gold/gold_ddl.sql).
+
+**Referências:** [Row filters e column masks](https://learn.microsoft.com/azure/databricks/data-governance/unity-catalog/filters-and-masks/manually-apply)
 
 ---
 
@@ -538,6 +546,8 @@ de uma migração: o pipeline de CDC, a carga JDBC, o SFTP e o reverse ETL rodam
 clássico (single node), que está na VNet com peering; a Gold roda em serverless. Migrar as tarefas
 clássicas para serverless é só configurar NCC + Private Link, sem mudar código.
 
+**Referências:** [Conectividade privada do serverless para recursos na VNet](https://learn.microsoft.com/azure/databricks/security/network/serverless-network-security/pl-to-internal-network)
+
 ### Controle de custo
 
 - **Budget policies** com tags por projeto/time em todos os jobs e pipelines serverless.
@@ -563,6 +573,8 @@ precisa de complemento:
   validação de contagem e soma, a aplicação em faixas sem travar a produção e a auditoria
   continuam precisando ser construídas. O padrão de staging com procedure deste laboratório
   funciona com qualquer orquestrador, inclusive o próprio ADF.
+
+**Referências:** [Conector Db2 do ADF](https://learn.microsoft.com/azure/data-factory/connector-db2) · [Conector ODBC do ADF](https://learn.microsoft.com/azure/data-factory/connector-odbc)
 
 ---
 
