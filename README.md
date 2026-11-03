@@ -61,44 +61,6 @@ ExpressRoute). Os dados são **100% sintéticos**, gerados por um simulador de m
 Versão interativa, com botão **Próximo** e a explicação de cada passo:
 [abrir o diagrama da arquitetura](https://devalvess.github.io/banking-cdc-lakehouse-lab/arquitetura.html).
 
-<details>
-<summary>Mesmo fluxo em diagrama de texto (Mermaid)</summary>
-
-```mermaid
-flowchart LR
-    subgraph ONPREM["'Datacenter' on-prem — vnet-onprem 10.50.0.0/16 (servidor 10.50.1.10)"]
-        direction TB
-        CORE[("Db2 · CORE<br/>clientes, contas, transações")]
-        ASN["ASN Capture<br/>lê o log do Db2"]
-        CD[("Tabelas CD<br/>(change data)")]
-        DBZ["Debezium<br/>Kafka Connect"]
-        KAFKA[["Kafka<br/>corebank.CORE.*"]]
-        LEG[("Db2 · LEGADO<br/>contratos — sem CDC")]
-        SFTP[/"SFTP<br/>CSV batch noturno"/]
-        CRED[("Db2 · CREDITO<br/>staging + produção")]
-        CORE --> ASN --> CD --> DBZ --> KAFKA
-    end
-
-    subgraph DBX["Azure Databricks + Unity Catalog — catálogo banking_lab"]
-        direction TB
-        P["Pipeline Lakeflow<br/>AUTO CDC (clássico)"]
-        J["Jobs JDBC / SFTP<br/>(clássico)"]
-        B[(Bronze)] --> S[(Silver)]
-        S --> G[(Gold<br/>serverless)]
-        OPS[(ops: watermark,<br/>reconciliação, auditoria)]
-        RE["Reverse ETL<br/>(clássico)"]
-    end
-
-    KAFKA == "peering privado :9092" ==> P --> B
-    LEG == ":50000 JDBC" ==> J --> B
-    SFTP == ":2222 pull" ==> J
-    G --> RE == "staging + procedure :50000" ==> CRED
-    J -.-> OPS
-    RE -.-> OPS
-```
-
-</details>
-
 ### Rede
 
 ![A rede peça por peça: VNets, peering, NSG, caminho de uma leitura JDBC e por que o serverless fica de fora](docs/img/rede.gif)
@@ -276,37 +238,6 @@ A última linha é o ponto principal: **"conector RUNNING" não significa "dados
 ### Padrão adotado: staging + aplicação controlada no destino
 
 ![Reverse ETL: a Gold é publicada, o job grava na staging do Db2 e a procedure aplica em produção](docs/img/reverse_etl.gif)
-
-<details>
-<summary>Sequência detalhada (diagrama de texto)</summary>
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant G as gold.limite_pre_aprovado
-    participant J as Job reverse ETL (cluster clássico)
-    participant A as ops.reverse_etl_execucoes
-    participant ST as Db2: CREDITO.STG_LIMITE_PRE_APROVADO
-    participant SP as Db2: SP_APLICAR_LIMITE
-    participant P as Db2: CREDITO.LIMITE_PRE_APROVADO (produção)
-
-    J->>G: Fixa a versão N da tabela Delta (time travel)
-    J->>A: Lote LIMITE_vN — contagem, soma, status INICIADO
-    J->>ST: Limpa o lote e insere via JDBC (2 conexões, batch de 1.000)
-    J->>SP: CALL (lote, versão, qt esperada, soma esperada, tamanho do lote)
-    SP->>ST: Confere contagem e soma recebidas
-    alt bateu
-        loop faixas de 200 IDs, commit por faixa, LOCK TIMEOUT 5 s
-            SP->>P: MERGE só das linhas com hash diferente
-        end
-        SP-->>J: APLICADO + linhas alteradas
-    else divergência
-        SP-->>J: REJEITADO — produção não foi tocada
-    end
-    J->>A: Fecha a auditoria (status, linhas, mensagem)
-```
-
-</details>
 
 Código: [reverse_etl_limite.py](databricks/src/06_reverse_etl/reverse_etl_limite.py) e
 [03_credito.sql](onprem/db2/sql/03_credito.sql) (staging, controle e procedure). O mesmo
