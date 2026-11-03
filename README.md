@@ -100,6 +100,7 @@ Catálogo `banking_lab` no Unity Catalog, com um schema por responsabilidade:
 | Sistema de crédito (destino do reverse ETL) | Schema `CREDITO` no mesmo Db2 | Seria outro servidor/banco |
 | Movimento real dos clientes | Simulador Python (Faker pt_BR) | Dados sintéticos |
 | Cofre de senhas (CyberArk / Key Vault) | Secret scope `onprem` do Databricks | Key Vault-backed scope |
+| Acesso governado ao banco on-prem | Fonte JDBC do Spark com credencial no secret scope | Avaliar uma conexão JDBC do Unity Catalog, que governa o acesso no nível da conexão |
 | Grupos do Entra ID | Grupos de conta do Databricks | Sincronização via SCIM |
 
 Tudo é criado por código: [Terraform](infra/terraform) para rede e VM,
@@ -225,7 +226,7 @@ Código: [databricks/src/02_cdc](databricks/src/02_cdc) — pipeline Lakeflow em
 
 A última linha é o ponto principal: **"conector RUNNING" não significa "dados chegando"**.
 
-**Referências:** [Debezium Db2 connector](https://debezium.io/documentation/reference/connectors/db2.html) · [asncap: Starting Capture — IBM](https://www.ibm.com/docs/en/idr/11.4.0?topic=zos-asncap-starting-capture) · [AUTO CDC — Lakeflow](https://learn.microsoft.com/azure/databricks/ldp/cdc)
+**Referências:** [Debezium Db2 connector](https://debezium.io/documentation/reference/connectors/db2.html) · [AUTO CDC — Lakeflow](https://learn.microsoft.com/azure/databricks/ldp/cdc)
 
 ---
 
@@ -268,10 +269,12 @@ resultado fica registrado **dos dois lados**: `ops.reverse_etl_execucoes` no Dat
 | **Push** (implementado) | Databricks conecta no banco on-prem via JDBC por rede privada | Precisa de baixa latência e o time de redes libera o tráfego de entrada no on-prem |
 | **Pull via arquivo** | Databricks gera arquivo (Parquet/CSV) em storage; agente on-prem baixa e carrega | Política de segurança **só permite conexões saindo do on-prem** — muito comum em bancos |
 | **Pull via SQL** | O sistema on-prem consulta um SQL Warehouse (ODBC/JDBC) ou usa Delta Sharing | O consumidor on-prem tem capacidade de integrar e quer controlar o horário |
+| **Servir via Lakebase** | A Gold é sincronizada para o Lakebase Postgres (synced tables) e a aplicação consulta direto, com baixa latência | A aplicação consegue ler de um Postgres, em vez de exigir o dado no Db2. Avaliar o custo do Lakebase e da sincronização e o caminho de rede privado até a aplicação |
 
-A lógica de staging, validação e auditoria é a mesma nos três; só muda quem inicia a conexão.
+A lógica de staging, validação e auditoria é a mesma nos três primeiros; só muda quem inicia
+a conexão. No Lakebase, a aplicação passa a ler do Lakehouse em vez de receber o dado no Db2.
 
-**Referências:** [Conexão JDBC no Azure Databricks (leitura e gravação)](https://learn.microsoft.com/azure/databricks/connect/jdbc-connection)
+**Referências:** [Fonte JDBC do Spark (leitura e gravação)](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html) · [Conexão JDBC do Unity Catalog](https://learn.microsoft.com/azure/databricks/connect/jdbc-connection) · [Synced tables do Lakebase](https://learn.microsoft.com/azure/databricks/oltp/projects/sync-tables)
 
 ---
 
@@ -337,7 +340,7 @@ Esse é também o argumento mais forte a favor do CDC por log.
 nuvem) e o Auto Loader carrega com schema explícito, *rescued data column* para linhas fora do
 layout e o nome do arquivo em cada linha. Arquivo já processado não duplica (checkpoint).
 
-**Referências:** [Conexão JDBC no Azure Databricks](https://learn.microsoft.com/azure/databricks/connect/jdbc-connection) · [Auto Loader](https://learn.microsoft.com/azure/databricks/ingestion/cloud-object-storage/auto-loader/)
+**Referências:** [Fonte JDBC do Spark](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html) · [Auto Loader](https://learn.microsoft.com/azure/databricks/ingestion/cloud-object-storage/auto-loader/)
 
 ---
 
